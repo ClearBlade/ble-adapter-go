@@ -18,34 +18,34 @@ The adapter currently only supports the ability to discover BLE devices and subs
    *Where* 
 
    __systemKey__
-     * REQUIRED
-     * The system key of the ClearBLade Platform __System__ the adapter will be connecting to
+  * REQUIRED
+  * The system key of the ClearBLade Platform __System__ the adapter will be connecting to
 
    __systemSecret__
-     * REQUIRED
-     * The system secret of the ClearBLade Platform __System__ the adapter will be connecting to
+  * REQUIRED
+  * The system secret of the ClearBLade Platform __System__ the adapter will be connecting to
    
    __deviceName__
-     * REQUIRED
-     * The name of the device the adapter will authenticate to the platform with.
-     * Requires the device to have been defined within the ClearBlade Platform __System__
+  * REQUIRED
+  * The name of the device the adapter will authenticate to the platform with.
+  * Requires the device to have been defined within the ClearBlade Platform __System__
    
    __password__
-     * REQUIRED
-     * The password the adapter will use to authenticate to the platform with.
-     * Requires the device to have been defined within the ClearBlade Platform __System__
-     * In most cases the __active_key__ of the device will be used as the password
+  * REQUIRED
+  * The password the adapter will use to authenticate to the platform with.
+  * Requires the device to have been defined within the ClearBlade Platform __System__
+  * In most cases the __active_key__ of the device will be used as the password
    
    __platformURL__
-     * OPTIONAL
-     * Defaults to __http://localhost:9000__
+  * OPTIONAL
+  * Defaults to __http://localhost:9000__
    
    __messagingURL__
-     * OPTIONAL
-     * Defaults to __localhost:1883__
+  * OPTIONAL
+  * Defaults to __localhost:1883__
 
 ## Dependencies
-* BlueZ - The minimum version of BlueZ with BLE support is 5.33.
+  * BlueZ - The minimum version of BlueZ with BLE support is 5.33.
 
 
 ## Setup
@@ -70,8 +70,8 @@ These steps were compiled together from multiple sources obtained through numero
    https://www.element14.com/community/community/stem-academy/microbit/blog/2016/09/16/1-microbit-1-raspberry-pi-3-1-bluez-upgrade-1-huge-headache
 
 #### Install BlueZ Dependencies
-**`sudo apt-get update`
-**`sudo apt-get install –y bluetooth bluez-tools build-essential autoconf glib2.0 libdbus-1-dev libudev-dev libical-dev libreadline-dev`
+  * `sudo apt-get update`
+  * `sudo apt-get install –y bluetooth bluez-tools build-essential autoconf glib2.0 libdbus-1-dev libudev-dev libical-dev libreadline-dev`
 
 ##### Potential Errors Encountered
    `Error with "sudo apt-get install glib2.0"`
@@ -89,40 +89,40 @@ These steps were compiled together from multiple sources obtained through numero
 
 ###### Resolution
 Issue the following commands:
-**`sudo mandb`
+  * `sudo mandb`
    `Purging old database entries in /usr/share/man...`
    `Processing manual pages under /usr/share/man...`
    `fopen: Read-only file system`
 
-**`sudo apt-get install libglib2.0-dev`
+  * `sudo apt-get install libglib2.0-dev`
    **In the event of a __E: dpkg was interrupted__ error, execute `sudo dpkg –configure –a` to correct the problem
 
 #### Install BlueZ
 Install the appropriate version of BlueZ (5.45 is currently the most recent version) by issuing the following commands at a terminal prompt:
-** `wget http://www.kernel.org/pub/linux/bluetooth/bluez-5.45.tar.xz`
-** `tar xf bluez-5.45.tar.xz`
-** `cd bluez-5.45`
-**`./configure --prefix=/usr --mandir=/usr/share/man --sysconfdir=/etc --localstatedir=/var --enable-experimental --enable-maintainer-mode`
-**`make`
-**`sudo make install`
+  * `wget http://www.kernel.org/pub/linux/bluetooth/bluez-5.45.tar.xz`
+  * `tar xf bluez-5.45.tar.xz`
+  * `cd bluez-5.45`
+  * `./configure --prefix=/usr --mandir=/usr/share/man --sysconfdir=/etc --localstatedir=/var --enable-experimental --enable-maintainer-mode`
+  * `make`
+  * `sudo make install`
 
 
 #### Post Installation Configuration
 Additional steps are needed in order to ensure BlueZ operates correctly when working with BLE devices and DBUS.
 ##### Enable Experimental Support
 Enable experimental support in the bluetooth daemon (this enables BLE)
-   **`sudo sed -i '/^ExecStart.*bluetoothd\s*$/ s/$/ --experimental/' /lib/systemd/system/bluetooth.service`
+  * `sudo sed -i '/^ExecStart.*bluetoothd\s*$/ s/$/ --experimental/' /lib/systemd/system/bluetooth.service`
 ##### Link to Bluetooth Firmware
 Raspbian installs Bluetooth firmware in a directory not recognized by Bluez. A symbolic link needs to be created so that BlueZ can accurately find the Bluetooth firmware.
-   **`sudo ln -s /lib/firmware /etc/firmware`
+  * `sudo ln -s /lib/firmware /etc/firmware`
 ##### Enable Bluetooth on Boot
 Enable Bluetooth to load during system boot, then reload daemons to load it without rebooting, or just reboot after enabling it.
-   **`sudo systemctl enable bluetooth`
-   **`sudo systemctl daemon-reload`
+  * `sudo systemctl enable bluetooth`
+  * `sudo systemctl daemon-reload`
 ##### Apply permissions
 The following command will need to be executed for each user that will be accessing Bluetooth:
-   `sudo usermod -G bluetooth -a pi`
-   **Where “pi” is the username in the example above. Replace “pi” with the username of any user who will need to be able to access Bluetooth.
+  `sudo usermod -G bluetooth -a pi`
+  * Where “pi” is the username in the example above. Replace “pi” with the username of any user who will need to be able to access Bluetooth.
 
 When executing code (specifically GoLang), the following error was encountered when attempting to make a connection to DBUS:
 Rejected send message, 2 matched rules; type="method_call", sender=":1.6" (uid=1000 pid=1031 comm="./ble-adapter-go -activeKey 1234567890 -deviceName") interface="org.freedesktop.DBus.ObjectManager" member="GetManagedObjects" error name="(unset)" requested_reply="0" destination="org.bluez" (uid=0 pid=624 comm="/usr/libexec/bluetooth/bluetoothd --experimental ")
