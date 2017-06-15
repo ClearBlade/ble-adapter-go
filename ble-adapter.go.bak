@@ -1,0 +1,106 @@
+package main
+
+import (
+	"flag"
+	"log"
+	"os"
+
+	"github.com/clearblade/BLE-ADAPTER-GO/bleadapter"
+	cb "github.com/clearblade/Go-SDK"
+)
+
+var (
+	//platURL    string
+	//messURL    string
+	sysKey     string
+	sysSec     string
+	deviceName string //See if we can get the edge device name dynamically
+	activeKey  string
+
+	deviceClient *cb.DeviceClient
+)
+
+const (
+	platURL = "https://bosch.clearblade.com:443"
+	messURL = "bosch.clearblade.com:1883"
+)
+
+func init() {
+	flag.StringVar(&sysKey, "systemKey", "", "system key (required)")
+	flag.StringVar(&sysSec, "systemSecret", "", "system secret (required)")
+
+	//TODO - May not need since we can invoke edge
+	//flag.StringVar(&platURL, "platformURL", "", "platform url (required)")
+
+	//TODO - May no need since we can invoke edge
+	//flag.StringVar(&messURL, "messagingURL", "", "messaging URL")
+
+	flag.StringVar(&deviceName, "deviceName", "", "name of device (required)")
+	flag.StringVar(&activeKey, "activeKey", "", "active key (password) for device (required)")
+}
+
+func usage() {
+	log.Printf("Usage: ble-adapter [options]\n\n")
+	flag.PrintDefaults()
+}
+
+func validateFlags() {
+	flag.Parse()
+	if sysKey == "" ||
+		sysSec == "" ||
+		//platURL == "" ||
+		//messURL == "" ||
+		deviceName == "" ||
+		activeKey == "" {
+
+		log.Printf("Missing required flags\n\n")
+		flag.Usage()
+		os.Exit(1)
+	}
+}
+
+//create and initialize the clearblade platform device client
+func initCbDeviceClient() {
+	deviceClient = cb.NewDeviceClient(sysKey, sysSec, deviceName, activeKey)
+
+	if platURL != "" {
+		log.Println("setting custom platform URL to ", platURL)
+		deviceClient.HttpAddr = platURL
+	}
+
+	if messURL != "" {
+		log.Println("setting custom messaging URL to ", messURL)
+		deviceClient.MqttAddr = messURL
+	}
+}
+
+func main() {
+	flag.Usage = usage
+	validateFlags()
+
+	//TODO - This would need a developer ID. May need to create a service account
+	//within the platform.
+	// If the command line arguments are valid, we need to verify the status
+	// of the data collections. If they do not exist, they need to be created
+	//
+
+	initCbDeviceClient()
+
+	log.Println("Authenticating to platform with device ", deviceName)
+	log.Println("Authenticating to platform with active key ", activeKey)
+
+	if err := deviceClient.Authenticate(); err != nil {
+		log.Fatalf("Error authenticating: %s", err.Error())
+	}
+	log.Printf("%+v\n", deviceClient)
+
+	if err := deviceClient.InitializeMQTT("bleadapter_"+deviceName, "", 30, nil, nil); err != nil {
+		log.Fatalf("Unable to initialize MQTT: %s", err.Error())
+	}
+
+	bleAdapter := bleadapter.BleAdapter{
+		CbDeviceClient: deviceClient,
+	}
+
+	bleAdapter.ScanForDevices()
+}
