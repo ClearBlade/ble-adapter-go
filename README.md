@@ -158,7 +158,8 @@ Reboot after making these changes.
 ##### Other Errors Encountered
 ```
 2017/06/13 21:48:49 pi: setting discovery filter [32F9169F-4FEB-4883-ADE6-1F0127018DB3]  
-Error setting discovery filter: %s Method "SetDiscoveryFilter" with signature "a{sv}" on interface "org.bluez.Adapter1" doesn't exist
+Error setting discovery filter: %s Method "SetDiscoveryFilter"   
+with signature "a{sv}" on interface "org.bluez.Adapter1" doesn't exist
 ```
 
 ###### Possible Solution
