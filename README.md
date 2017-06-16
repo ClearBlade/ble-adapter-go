@@ -45,7 +45,7 @@ The adapter currently only supports the ability to discover BLE devices and subs
   * Defaults to __localhost:1883__
 
 ## Dependencies
-  * BlueZ - The minimum version of BlueZ with BLE support is 5.33.
+  * BlueZ - The minimum version of BlueZ with BLE support is 5.40. It is recommended to install at least BlueZ version 5.44 (5.45 is the most current version).
 
 
 ## Setup
