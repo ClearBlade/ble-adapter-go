@@ -56,14 +56,6 @@ Tested with
 - bluez bluetooth `v5.44` and `v5.45`
 - raspbian and hypirot (debian 8) armv7 `4.4.x`  
 
-See in `scripts/` how to upgrade bluez to 5.43
-
-Give access to `hciconfig` to any user (may have [security implications](https://www.insecure.ws/linux/getcap_setcap.html))
-
-```
-sudo setcap 'cap_net_raw,cap_net_admin+eip' `which hciconfig`
-```
-
 ### Upgrading BlueZ
 These steps were compiled together from multiple sources obtained through numerous internet searches. The main source of information was taken from:
 
@@ -131,21 +123,21 @@ Rejected send message, 2 matched rules; type="method_call", sender=":1.6" (uid=1
 In order to rectify the issue, the following steps must be performed:
 1.	edit `/etc/dbus-1/system.d/bluetooth.conf`
 2.	Take the section `<policy user="root">` and duplicate it for the user that the code is executing under (pi is assumed). Otherwise, all BLE code will need to be executed using sudo 
-   `<policy user="pi">`
-   `    <allow own="org.bluez"/>`
-   `    <allow send_destination="org.bluez"/>`
-   `    <allow send_interface="org.bluez.Agent1"/>`
-   `    <allow send_interface="org.bluez.MediaEndpoint1"/>`
-   `    <allow send_interface="org.bluez.MediaPlayer1"/>`
-   `    <allow send_interface="org.bluez.ThermometerWatcher1"/>`
-   `    <allow send_interface="org.bluez.AlertAgent1"/>`
-   `    <allow send_interface="org.bluez.Profile1"/>`
-   `    <allow send_interface="org.bluez.HeartRateWatcher1"/>`
-   `    <allow send_interface="org.bluez.CyclingSpeedWatcher1"/>`
-   `    <allow send_interface="org.bluez.GattCharacteristic1"/>`
-   `    <allow send_interface="org.bluez.GattDescriptor1"/>`
-   `    <allow send_interface="org.freedesktop.DBus.ObjectManager"/>`
-   `    <allow send_interface="org.freedesktop.DBus.Properties"/>`
+   `<policy user="pi">`  
+   `    <allow own="org.bluez"/>`  
+   `    <allow send_destination="org.bluez"/>`  
+   `    <allow send_interface="org.bluez.Agent1"/>`  
+   `    <allow send_interface="org.bluez.MediaEndpoint1"/>`  
+   `    <allow send_interface="org.bluez.MediaPlayer1"/>`  
+   `    <allow send_interface="org.bluez.ThermometerWatcher1"/>`  
+   `    <allow send_interface="org.bluez.AlertAgent1"/>`  
+   `    <allow send_interface="org.bluez.Profile1"/>`  
+   `    <allow send_interface="org.bluez.HeartRateWatcher1"/>`  
+   `    <allow send_interface="org.bluez.CyclingSpeedWatcher1"/>`  
+   `    <allow send_interface="org.bluez.GattCharacteristic1"/>`  
+   `    <allow send_interface="org.bluez.GattDescriptor1"/>`  
+   `    <allow send_interface="org.freedesktop.DBus.ObjectManager"/>`  
+   `    <allow send_interface="org.freedesktop.DBus.Properties"/>`  
    `  </policy>`
 ##### Reboot
 Reboot after making these changes.
