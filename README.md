@@ -126,7 +126,8 @@ When executing code (specifically GoLang), the following error was encountered w
 Rejected send message, 2 matched rules; type="method_call", sender=":1.6"  
 (uid=1000 pid=1031 comm="./ble-adapter-go -activeKey 1234567890 -deviceName")  
 interface="org.freedesktop.DBus.ObjectManager" member="GetManagedObjects" error name="(unset)"  
-requested_reply="0" destination="org.bluez" (uid=0 pid=624 comm="/usr/libexec/bluetooth/bluetoothd --experimental ")  
+requested_reply="0" destination="org.bluez"  
+(uid=0 pid=624 comm="/usr/libexec/bluetooth/bluetoothd --experimental ")  
 ```
 
 In order to rectify the issue, the following steps must be performed:
