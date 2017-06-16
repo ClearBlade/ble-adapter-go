@@ -92,7 +92,7 @@ Issue the following commands:
 
   * `sudo apt-get install libglib2.0-dev`
    ** In the event of a __E: dpkg was interrupted__ error, execute:
-     `sudo dpkg –configure –a` to correct the problem
+     `sudo dpkg –configure –a` to correct the problem **
 
 #### Install BlueZ
 Install the appropriate version of BlueZ (5.45 is currently the most recent version) by issuing the following commands at a terminal prompt:
