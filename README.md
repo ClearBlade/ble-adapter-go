@@ -2,7 +2,7 @@
 
 A Golang bluetooth adapter implementation utilizing BlueZ and DBUS that allows BLE devices to interact with the ClearBlade Platform.
 
-BlueZ - https://git.kernel.org/cgit/bluetooth/bluez.git/tree/doc
+BlueZ - https://git.kernel.org/cgit/bluetooth/bluez.git/tree/doc  
 DBUS - https://www.freedesktop.org/wiki/Software/dbus/
 
 ## Status
