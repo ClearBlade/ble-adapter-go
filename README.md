@@ -67,7 +67,7 @@ These steps were compiled together from multiple sources obtained through numero
 
 ##### Potential Errors Encountered
    ```Error with "sudo apt-get install glib2.0"  
-   `Processing triggers for man-db (2.7.0.2-5) ...  
+   Processing triggers for man-db (2.7.0.2-5) ...  
    /usr/bin/mandb: can't rename /var/cache/man/2111 to /var/cache/man/index.db: Read-only file system  
    /usr/bin/mandb: can't remove /var/cache/man/2111: Read-only file system  
    /usr/bin/mandb: can't chmod /var/cache/man/index.db: Read-only file system  
