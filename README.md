@@ -122,8 +122,9 @@ The following command will need to be executed for each user that will be access
   * Where “pi” is the username in the example above. Replace “pi” with the username of any user who will need to be able to access Bluetooth.
 
 When executing code (specifically GoLang), the following error was encountered when attempting to make a connection to DBUS:  
-`Rejected send message, 2 matched rules; type="method_call", sender=":1.6" (uid=1000 pid=1031 comm="./ble-adapter-go -activeKey 1234567890 -deviceName") interface="org.freedesktop.DBus.ObjectManager" member="GetManagedObjects" error name="(unset)" requested_reply="0" destination="org.bluez" (uid=0 pid=624 comm="/usr/libexec/bluetooth/bluetoothd --experimental ")`
-
+```
+Rejected send message, 2 matched rules; type="method_call", sender=":1.6" (uid=1000 pid=1031 comm="./ble-adapter-go -activeKey 1234567890 -deviceName") interface="org.freedesktop.DBus.ObjectManager" member="GetManagedObjects" error name="(unset)" requested_reply="0" destination="org.bluez" (uid=0 pid=624 comm="/usr/libexec/bluetooth/bluetoothd --experimental ")  
+```
 
 In order to rectify the issue, the following steps must be performed:
 1.	edit `/etc/dbus-1/system.d/bluetooth.conf`
