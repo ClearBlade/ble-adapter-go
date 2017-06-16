@@ -66,7 +66,8 @@ These steps were compiled together from multiple sources obtained through numero
   * `sudo apt-get install –y bluetooth bluez-tools build-essential autoconf glib2.0 libdbus-1-dev libudev-dev libical-dev libreadline-dev`
 
 ##### Potential Errors Encountered
-   ```Error with "sudo apt-get install glib2.0"  
+```
+   Error with "sudo apt-get install glib2.0"  
    Processing triggers for man-db (2.7.0.2-5) ...  
    /usr/bin/mandb: can't rename /var/cache/man/2111 to /var/cache/man/index.db: Read-only file system  
    /usr/bin/mandb: can't remove /var/cache/man/2111: Read-only file system  
@@ -77,14 +78,17 @@ These steps were compiled together from multiple sources obtained through numero
    dpkg: unrecoverable fatal error, aborting:  
     unable to flush updated status of 'man-db': Read-only file system  
    E: Sub-process /usr/bin/dpkg returned an error code (2)  
-   E: Failed to write temporary StateFile /var/lib/apt/extended_states.tmp```  
+   E: Failed to write temporary StateFile /var/lib/apt/extended_states.tmp
+```  
 
 ###### Resolution
 Issue the following commands:
   * `sudo mandb`
-   ```Purging old database entries in /usr/share/man...  
+```
+   Purging old database entries in /usr/share/man...  
    Processing manual pages under /usr/share/man...  
-   fopen: Read-only file system```
+   fopen: Read-only file system
+```
 
   * `sudo apt-get install libglib2.0-dev`
    **In the event of a __E: dpkg was interrupted__ error, execute `sudo dpkg –configure –a` to correct the problem
@@ -123,7 +127,8 @@ Rejected send message, 2 matched rules; type="method_call", sender=":1.6" (uid=1
 In order to rectify the issue, the following steps must be performed:
 1.	edit `/etc/dbus-1/system.d/bluetooth.conf`
 2.	Take the section `<policy user="root">` and duplicate it for the user that the code is executing under (pi is assumed). Otherwise, all BLE code will need to be executed using sudo  
-   ```<policy user="pi">  
+```
+   <policy user="pi">  
      <allow own="org.bluez"/>  
      <allow send_destination="org.bluez"/>  
      <allow send_interface="org.bluez.Agent1"/>  
@@ -138,14 +143,17 @@ In order to rectify the issue, the following steps must be performed:
      <allow send_interface="org.bluez.GattDescriptor1"/>  
      <allow send_interface="org.freedesktop.DBus.ObjectManager"/>  
      <allow send_interface="org.freedesktop.DBus.Properties"/>  
-   </policy>```
+   </policy>
+```
 ##### Reboot
 Reboot after making these changes.
 `sudo reboot`
 
 ##### Other Errors Encountered
-```2017/06/13 21:48:49 pi: setting discovery filter [32F9169F-4FEB-4883-ADE6-1F0127018DB3]  
-Error setting discovery filter: %s Method "SetDiscoveryFilter" with signature "a{sv}" on interface "org.bluez.Adapter1" doesn't exist```
+```
+2017/06/13 21:48:49 pi: setting discovery filter [32F9169F-4FEB-4883-ADE6-1F0127018DB3]  
+Error setting discovery filter: %s Method "SetDiscoveryFilter" with signature "a{sv}" on interface "org.bluez.Adapter1" doesn't exist
+```
 
 ###### Possible Solution
 Upgrade BlueZ to version 5.43 at the minimum
