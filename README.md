@@ -45,6 +45,7 @@ The adapter currently only supports the ability to discover BLE devices and subs
   * Defaults to __localhost:1883__
 
 ## Dependencies
+  * Linux - Minimum kernel version of 3.5 - http://www.bluez.org/release-of-bluez-5-0/  
   * BlueZ - The minimum version of BlueZ with BLE support is 5.40. It is recommended to install at least BlueZ version 5.44 (5.45 is the most current version).
 
 
