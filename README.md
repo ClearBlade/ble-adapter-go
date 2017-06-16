@@ -90,7 +90,7 @@ Issue the following commands:
    fopen: Read-only file system
 ```
 
-  * `sudo apt-get install libglib2.0-dev`
+  * `sudo apt-get install libglib2.0-dev`  
    ** In the event of a __E: dpkg was interrupted__ error, execute:
      `sudo dpkg –configure –a` to correct the problem **
 
