@@ -116,7 +116,7 @@ Enable Bluetooth to load during system boot, then reload daemons to load it with
   * `sudo systemctl enable bluetooth`
   * `sudo systemctl daemon-reload`
 ##### Apply permissions
-The following command will need to be executed for each user that will be accessing Bluetooth:
+The following command will need to be executed for each user that will be accessing Bluetooth:  
   `sudo usermod -G bluetooth -a pi`
   * Where “pi” is the username in the example above. Replace “pi” with the username of any user who will need to be able to access Bluetooth.
 
