@@ -10,8 +10,8 @@ import (
 )
 
 var (
-	platformURL  = platURL
-	messagingURL = messURL
+	platformURL  string
+	messagingURL string
 	sysKey       string
 	sysSec       string
 	deviceName   string //See if we can get the edge device name dynamically
@@ -30,8 +30,8 @@ func init() {
 	flag.StringVar(&sysSec, "systemSecret", "", "system secret (required)")
 	flag.StringVar(&deviceName, "deviceName", "", "name of device (required)")
 	flag.StringVar(&password, "password", "", "password (or active key) for device authentication (required)")
-	flag.StringVar(&platformURL, "platformURL", "", "platform url (optional)")
-	flag.StringVar(&messagingURL, "messagingURL", "", "messaging URL (optional)")
+	flag.StringVar(&platformURL, "platformURL", platURL, "platform url (optional)")
+	flag.StringVar(&messagingURL, "messagingURL", messURL, "messaging URL (optional)")
 }
 
 func usage() {
