@@ -158,16 +158,16 @@ func (conn *Connection) InitiateDiscovery(uuids ...string) (chan *Device, error)
 
 	deviceDiscoveredChannel := make(chan *Device)
 
-	fmt.Println("In Initiate Discovery, Retrieving device ble adapter from DBUS")
+	log.Println("In Initiate Discovery, Retrieving device ble adapter from DBUS")
 	adapter, err := conn.GetAdapter()
 	if err != nil {
-		fmt.Println("Error retrieving device ble adapter %s", err)
+		log.Println("Error retrieving device ble adapter %s", err)
 		return nil, err
 	}
 
 	go adapter.DiscoverDevices(deviceDiscoveredChannel, uuids...)
 	if err != nil {
-		fmt.Println("Error while discovering devices %s", err)
+		log.Println("Error while discovering devices %s", err)
 		return nil, err
 	}
 
@@ -179,7 +179,6 @@ func (conn *Connection) InitiateDiscovery(uuids ...string) (chan *Device, error)
 // waits for the specified timeout to discover one of the given UUIDs,
 // and then stops discovery mode.
 func (adapter *blob) DiscoverDevices(deviceChannel chan<- *Device, uuids ...string) error {
-	fmt.Println("In DiscoverDevices")
 	conn := adapter.conn
 
 	signals := make(chan *dbus.Signal)
@@ -188,14 +187,14 @@ func (adapter *blob) DiscoverDevices(deviceChannel chan<- *Device, uuids ...stri
 	addrule := "type='signal',interface='org.freedesktop.DBus.ObjectManager',member='InterfacesAdded'"
 	err := adapter.conn.addMatch(addrule)
 	if err != nil {
-		fmt.Println("Error adding InterfacesAdded match")
+		log.Println("Error adding InterfacesAdded match")
 		return err
 	}
 
 	removerule := "type='signal',interface='org.freedesktop.DBus.ObjectManager',member='InterfacesRemoved'"
 	err = adapter.conn.addMatch(removerule)
 	if err != nil {
-		fmt.Println("Error adding InterfacesRemoved match")
+		log.Println("Error adding InterfacesRemoved match")
 		return err
 	}
 
@@ -206,24 +205,24 @@ func (adapter *blob) DiscoverDevices(deviceChannel chan<- *Device, uuids ...stri
 	defer conn.removeMatch(addrule)
 	defer conn.removeMatch(removerule)
 
-	fmt.Println("Setting discovery filter")
+	log.Println("Setting discovery filter")
 	err = adapter.SetDiscoveryFilter(uuids...)
 	if err != nil {
-		fmt.Println("Error setting discovery filter: %s", err)
+		log.Println("Error setting discovery filter: %s", err)
 		return err
 	}
 
-	fmt.Println("Starting device discovery")
+	log.Println("Starting device discovery")
 	err = adapter.StartDiscovery()
 	if err != nil {
-		fmt.Println("Error starting device discovery: %s", err)
+		log.Println("Error starting device discovery: %s", err)
 		return err
 	}
 
-	fmt.Println("Starting discoverDevicesLoop")
+	log.Println("Starting discoverDevicesLoop")
 	err = adapter.discoverDevicesLoop(deviceChannel, uuids, signals)
 	if err != nil {
-		fmt.Println("Error returned from discoverDevicesLoop: %s", err)
+		log.Println("Error returned from discoverDevicesLoop: %s", err)
 		return err
 	}
 	return err
@@ -242,7 +241,7 @@ func (adapter *blob) discoverDevicesLoop(deviceChannel chan<- *Device, uuids []s
 				//Refresh the list of managed objects
 				err := adapter.conn.Update()
 				if err != nil {
-					fmt.Println("Error updating object cache: %v", err)
+					log.Println("Error updating object cache: %v", err)
 					return err
 				}
 
@@ -252,7 +251,7 @@ func (adapter *blob) discoverDevicesLoop(deviceChannel chan<- *Device, uuids []s
 				if err == nil {
 					deviceChannel <- &theDevice
 				} else {
-					fmt.Println(err)
+					log.Println(err)
 				}
 				//}
 

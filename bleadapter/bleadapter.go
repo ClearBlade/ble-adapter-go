@@ -5,8 +5,6 @@ import (
 	"log"
 	"strings"
 
-	"fmt"
-
 	"github.com/clearblade/BLE-ADAPTER-GO/ble"
 	cb "github.com/clearblade/Go-SDK"
 )
@@ -75,7 +73,7 @@ func (adapt *BleAdapter) ScanForDevices() {
 
 	log.Println("Waiting for BLE Devices")
 	for device := range deviceChannel {
-		fmt.Println("Device added = %#v", *device)
+		log.Println("Device added = %#v", *device)
 		if deviceJSON, err := adapt.createBleDeviceJSON(*device); err != nil {
 			log.Printf("error marshaling device into json: %s", err.Error())
 		} else {

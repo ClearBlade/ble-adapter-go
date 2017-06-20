@@ -2,7 +2,7 @@ package bleadapter
 
 import (
 	"crypto/tls"
-	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"time"
@@ -47,11 +47,11 @@ func Publish(topic string, message string) {
 
 	client := MQTT.NewClient(connOpts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		fmt.Println(token.Error())
+		log.Println(token.Error())
 		return
 	}
-	fmt.Printf("Connected to %s\n", MQTT_SERVER)
+	log.Println("Connected to %s\n", MQTT_SERVER)
 
-	fmt.Printf("Publishing message %s to topic %s\n", message, topic)
+	log.Println("Publishing message %s to topic %s\n", message, topic)
 	client.Publish(topic, byte(MSG_QOS), MSG_RETAINED, message)
 }
