@@ -19,24 +19,17 @@ const (
 	adapterConfigCollectionName = "BLE_Adapter_Config"
 	devicePublishTopic          = "/bleadapter/bledevice"
 	msgPublishQos               = 2
-	deviceManufacturerData      = "Manufacturer"
-	deviceAddress               = "Address"
-	deviceAlias                 = "Alias"
-	deviceUUIDs                 = "UUIDs"
-	deviceRSSI                  = "RSSI"
+	deviceManufacturerData      = "manufacturer"
+	deviceAddress               = "address"
+	deviceAlias                 = "alias"
+	deviceUUIDs                 = "uuids"
+	deviceRSSI                  = "rssi"
 )
 
 //BleAdapter - Struct that represents a BLE Adapter
 type BleAdapter struct {
 	connection     *ble.Connection
 	CbDeviceClient *cb.DeviceClient
-
-	//platformURL         string
-	//messagingURL        string
-	//systemKey           string
-	//systemSecret        string
-	//authDeviceName      string //See if we can get the edge name dynamically
-	//authDeviceActiveKey string
 }
 
 //ScanForDevices - Scan for ble devices
@@ -56,6 +49,13 @@ func (adapt *BleAdapter) ScanForDevices() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// TODO - May need to put channel creation, discovery initiation,
+	// and device added processing into its own function
+
+	// TODO - May need to add a timer to stop discovery, refresh the device
+	// cache (remove all devices), and restart discovery. Would need to
+	// deterimine the appropriate refresh interval
 
 	var deviceChannel chan *ble.Device
 	filterString := strings.TrimSpace(strings.Join(uuidFilters, " "))
@@ -92,9 +92,7 @@ func (adapt *BleAdapter) getDeviceFilters() []string {
 	//var query cb.Query //A nil query results in all rows being returned
 	results, err := adapt.CbDeviceClient.GetDataByName(deviceFiltersCollectionName, &cb.Query{})
 
-	dataLength := len(results["DATA"].([]interface{}))
-
-	if err != nil || dataLength == 0 {
+	if err != nil || len(results["DATA"].([]interface{})) == 0 {
 		log.Println("No device filters enabled.")
 		return []string{}
 	}

@@ -102,14 +102,14 @@ func (device *blob) ManufacturerData() map[string]interface{} {
 	if manufacturer, ok := device.properties["ManufacturerData"]; ok {
 		manData := manufacturer.Value().(map[uint16]dbus.Variant)
 		for key, value := range manData {
-			manDataMap["ID"] = key
+			manDataMap["id"] = key
 
 			if reflect.TypeOf(value.Value()) == reflect.TypeOf([]byte(nil)) {
 				//Golang converts byte arrays to strings when marshalling as json
 				//We need to use JSONableSlice so that they remain as byte arrays
-				manDataMap["Data"] = JSONableSlice(value.Value().([]uint8))
+				manDataMap["data"] = JSONableSlice(value.Value().([]uint8))
 			} else {
-				manDataMap["Data"] = value.Value()
+				manDataMap["data"] = value.Value()
 			}
 		}
 	}

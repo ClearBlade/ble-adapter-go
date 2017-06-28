@@ -79,13 +79,9 @@ func main() {
 
 	initCbDeviceClient()
 
-	log.Println("Authenticating to platform with device ", deviceName)
-	log.Println("Authenticating to platform with password ", password)
-
 	if err := deviceClient.Authenticate(); err != nil {
 		log.Fatalf("Error authenticating: %s", err.Error())
 	}
-	log.Printf("%+v\n", deviceClient)
 
 	if err := deviceClient.InitializeMQTT("bleadapter_"+deviceName, "", 30, nil, nil); err != nil {
 		log.Fatalf("Unable to initialize MQTT: %s", err.Error())
