@@ -16,6 +16,7 @@ var (
 	sysSec       string
 	deviceName   string //See if we can get the edge device name dynamically
 	password     string
+	scanInterval int
 
 	deviceClient *cb.DeviceClient
 )
@@ -32,6 +33,7 @@ func init() {
 	flag.StringVar(&password, "password", "", "password (or active key) for device authentication (required)")
 	flag.StringVar(&platformURL, "platformURL", platURL, "platform url (optional)")
 	flag.StringVar(&messagingURL, "messagingURL", messURL, "messaging URL (optional)")
+	flag.IntVar(&scanInterval, "scanInterval", 6, "messaging URL (optional)")
 }
 
 func usage() {
@@ -78,7 +80,6 @@ func main() {
 	//
 
 	initCbDeviceClient()
-
 	if err := deviceClient.Authenticate(); err != nil {
 		log.Fatalf("Error authenticating: %s", err.Error())
 	}
@@ -87,9 +88,6 @@ func main() {
 		log.Fatalf("Unable to initialize MQTT: %s", err.Error())
 	}
 
-	bleAdapter := bleadapter.BleAdapter{
-		CbDeviceClient: deviceClient,
-	}
-
-	bleAdapter.ScanForDevices()
+	bleAdapter := bleadapter.BleAdapter{}
+	bleAdapter.Start(deviceClient, scanInterval)
 }

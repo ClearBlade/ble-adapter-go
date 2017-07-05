@@ -14,6 +14,7 @@ const (
 	deviceInterface   = "org.bluez.Device1"
 	interfacesAdded   = "org.freedesktop.DBus.ObjectManager.InterfacesAdded"
 	interfacesRemoved = "org.freedesktop.DBus.ObjectManager.InterfacesRemoved"
+	propertiesChanged = "org.freedesktop.DBus.Properties.PropertiesChanged"
 )
 
 // The Device type corresponds to the org.bluez.Device1 interface.

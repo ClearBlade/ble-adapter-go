@@ -2,7 +2,6 @@ package ble
 
 import (
 	"log"
-	"time"
 )
 
 const (
@@ -31,9 +30,7 @@ type Adapter interface {
 	StopDiscovery() error
 	RemoveDevice(Device) error
 	SetDiscoveryFilter(uuids ...string) error
-
-	Discover(timeout time.Duration, uuids ...string) error
-	DiscoverDevices(sigChannel chan<- *Device, uuids ...string) error
+	Discover(sigChannel chan<- *Device, stopDiscoveryChannel <-chan bool, uuids ...string)
 }
 
 // GetAdapter finds an Adapter in the object cache and returns it.
