@@ -122,7 +122,7 @@ func (adapter *blob) discoverLoop(deviceChannel chan<- *Device, uuids []string, 
 			//No need to account for PropertiesChanged signal
 			//Don't think we need to account for interfaces removed, but leaving here just in case
 			case interfacesRemoved:
-				log.Printf("interface removed signal = %#v", s)
+				//log.Printf("interface removed signal = %#v", s)
 
 				// The interfaces removed signal contains only the device address.
 				// The address would need to be parsed from the path.
@@ -157,10 +157,6 @@ func (adapter *blob) discoverLoop(deviceChannel chan<- *Device, uuids []string, 
 			//		[]string{}
 			//	}
 			//}
-
-			//Need to filter only on devices
-			//TODO - Need to determine if object cache device needs to be updated
-			//TODO - Need to determine if we need to respond to this signal
 			default:
 				log.Printf("%s: unexpected signal %s", adapter.Name(), s.Name)
 			}

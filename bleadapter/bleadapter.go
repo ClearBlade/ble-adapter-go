@@ -12,6 +12,15 @@ import (
 var (
 	uuidFilters  []string
 	publishTopic = devicePublishTopic
+
+	//Devices advertise at specific intervals. This should be set to at least 2N, where N is the
+	//amount of time associated with the advertising interval.
+	scanInterval int64 = 360 //seconds
+
+	//http://www.bluez.org/bluez-5-api-introduction-and-porting-guide/
+	//Once the discovery stops, devices neither connected to or paired will be automatically removed
+	//by bluetoothd within three minutes.
+	pauseInterval int64 = 60 //seconds
 )
 
 const (
@@ -25,22 +34,12 @@ const (
 	deviceAlias                 = "alias"
 	deviceUUIDs                 = "uuids"
 	deviceRSSI                  = "rssi"
-
-	//Devices advertise at specific intervals. This should be set to at least 2N, where N is the
-	//amount of time associated with the advertising interval.
-	defaultScanInterval = 6
-
-	//http://www.bluez.org/bluez-5-api-introduction-and-porting-guide/
-	//Once the discovery stops, devices neither connected to or paired will be automatically removed
-	//by bluetoothd within three minutes.
-	discoveryPauseInterval = 1
 )
 
 //BleAdapter - Struct that represents a BLE Adapter
 type BleAdapter struct {
 	connection     *ble.Connection
 	cbDeviceClient *cb.DeviceClient
-	scanInterval   int64
 	deviceChannel  chan *ble.Device
 }
 
@@ -48,12 +47,7 @@ func (adapt *BleAdapter) Start(devClient *cb.DeviceClient, theScanInterval int) 
 	adapt.cbDeviceClient = devClient
 
 	if theScanInterval > 0 {
-		log.Printf("Setting scan interval to %d", theScanInterval)
-		adapt.scanInterval = int64(theScanInterval)
-
-	} else {
-		log.Printf("Setting scan interval to default value %d", defaultScanInterval)
-		adapt.scanInterval = defaultScanInterval
+		scanInterval = int64(theScanInterval)
 	}
 
 	//Retrieve the adapter configuration from the CB Platform data collection
@@ -68,14 +62,14 @@ func (adapt *BleAdapter) Start(devClient *cb.DeviceClient, theScanInterval int) 
 		adapt.scanForDevices(stopDiscoveryChannel, stopHandleDevicesChannel)
 
 		// wait until the interval elapses
-		interval := time.Duration(int64(adapt.scanInterval) * time.Minute.Nanoseconds())
+		interval := time.Duration(int64(scanInterval) * time.Second.Nanoseconds())
 		time.Sleep(interval)
 
 		//Write to the stopDiscovery channel so that scanning is stopped
 		stopDiscoveryChannel <- true
 
 		// wait until the interval elapses
-		interval = time.Duration(int64(discoveryPauseInterval) * time.Minute.Nanoseconds())
+		interval = time.Duration(int64(pauseInterval) * time.Second.Nanoseconds())
 		time.Sleep(interval)
 	}
 
@@ -173,6 +167,15 @@ func (adapt *BleAdapter) getAdapterConfig() error {
 	}
 
 	publishTopic = results["DATA"].([]interface{})[0].(map[string]interface{})["publish_topic"].(string)
+
+	if results["DATA"].([]interface{})[0].(map[string]interface{})["discovery_scan_seconds"] != nil {
+		scanInterval = int64(results["DATA"].([]interface{})[0].(map[string]interface{})["discovery_scan_seconds"].(float64))
+	}
+
+	if results["DATA"].([]interface{})[0].(map[string]interface{})["discovery_pause_seconds"] != nil {
+		pauseInterval = int64(results["DATA"].([]interface{})[0].(map[string]interface{})["discovery_pause_seconds"].(float64))
+	}
+
 	return nil
 }
 

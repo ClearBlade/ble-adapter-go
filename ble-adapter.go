@@ -33,7 +33,7 @@ func init() {
 	flag.StringVar(&password, "password", "", "password (or active key) for device authentication (required)")
 	flag.StringVar(&platformURL, "platformURL", platURL, "platform url (optional)")
 	flag.StringVar(&messagingURL, "messagingURL", messURL, "messaging URL (optional)")
-	flag.IntVar(&scanInterval, "scanInterval", 6, "messaging URL (optional)")
+	flag.IntVar(&scanInterval, "scanInterval", 360, "The number of seconds to scan for BLE devices (optional)")
 }
 
 func usage() {
