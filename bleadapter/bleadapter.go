@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/clearblade/BLE-ADAPTER-GO/ble"
 	cb "github.com/clearblade/Go-SDK"
+	"github.com/clearblade/ble-adapter-go/ble"
 )
 
 var (
@@ -21,9 +21,17 @@ var (
 	//Once the discovery stops, devices neither connected to or paired will be automatically removed
 	//by bluetoothd within three minutes.
 	pauseInterval int64 = 60 //seconds
+
+	handleRemoved = false //Should the InterfacesRemoved signal be handled
+	handleChanged = false //Should the PropertiesChanged signal be handled
 )
 
 const (
+	//DBus signals
+	addrule        = "type='signal',interface='org.freedesktop.DBus.ObjectManager',member='InterfacesAdded'"
+	removerule     = "type='signal',interface='org.freedesktop.DBus.ObjectManager',member='InterfacesRemoved'"
+	propertiesrule = "type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged'"
+
 	deviceFiltersCollectionName = "BLE_Device_Filters"
 	adapterConfigCollectionName = "BLE_Adapter_Config"
 	devicePublishTopic          = "/bleadapter/bledevice"
@@ -43,6 +51,7 @@ type BleAdapter struct {
 	deviceChannel  chan *ble.Device
 }
 
+//Start - Starts execution of the BLEAdapter
 func (adapt *BleAdapter) Start(devClient *cb.DeviceClient, theScanInterval int) {
 	adapt.cbDeviceClient = devClient
 
@@ -50,25 +59,31 @@ func (adapt *BleAdapter) Start(devClient *cb.DeviceClient, theScanInterval int) 
 		scanInterval = int64(theScanInterval)
 	}
 
-	//Retrieve the adapter configuration from the CB Platform data collection
-	adapt.getAdapterConfig()
-
 	stopDiscoveryChannel := make(chan bool)
 	stopHandleDevicesChannel := make(chan bool)
 	defer close(stopDiscoveryChannel)
 	defer close(stopHandleDevicesChannel)
 
 	for true {
+		//Retrieve the adapter configuration from the CB Platform data collection
+		adapt.getAdapterConfig()
+		log.Printf("Beginning scan. Scan duration = %d", scanInterval)
+
 		adapt.scanForDevices(stopDiscoveryChannel, stopHandleDevicesChannel)
 
 		// wait until the interval elapses
 		interval := time.Duration(int64(scanInterval) * time.Second.Nanoseconds())
 		time.Sleep(interval)
 
+		if err := adapt.removeDbusEvents(); err != nil {
+			return
+		}
+
 		//Write to the stopDiscovery channel so that scanning is stopped
 		stopDiscoveryChannel <- true
 
 		// wait until the interval elapses
+		log.Printf("Beginning pause. Pause duration = %d", pauseInterval)
 		interval = time.Duration(int64(pauseInterval) * time.Second.Nanoseconds())
 		time.Sleep(interval)
 	}
@@ -81,15 +96,71 @@ func (adapt *BleAdapter) Start(devClient *cb.DeviceClient, theScanInterval int) 
 	//
 }
 
+func (adapt *BleAdapter) addDbusEvents() error {
+	var err error
+	if err = adapt.connection.AddMatch(addrule); err != nil {
+		log.Printf("Error adding InterfacesAdded match: %s", err.Error())
+		return err
+	}
+
+	if handleRemoved == true {
+		if err = adapt.connection.AddMatch(removerule); err != nil {
+			log.Printf("Error adding InterfacesRemoved match %s", err.Error())
+			return err
+		}
+	}
+
+	if handleChanged == true {
+		if err = adapt.connection.AddMatch(propertiesrule); err != nil {
+			log.Printf("Error adding PropertiesChanged match %s", err.Error())
+			return err
+		}
+	}
+	if err = adapt.connection.AddMatch(propertiesrule); err != nil {
+		log.Printf("Error adding PropertiesChanged match %s", err.Error())
+		return err
+	}
+	return nil
+}
+
+func (adapt *BleAdapter) removeDbusEvents() error {
+	var err error
+	if err = adapt.connection.RemoveMatch(addrule); err != nil {
+		log.Printf("Error removing InterfacesAdded match: %s", err.Error())
+		return err
+	}
+
+	if handleRemoved == true {
+		if err = adapt.connection.RemoveMatch(removerule); err != nil {
+			log.Printf("Error removing InterfacesRemoved match %s", err.Error())
+			return err
+		}
+	}
+
+	if handleChanged == true {
+		if err = adapt.connection.RemoveMatch(propertiesrule); err != nil {
+			log.Printf("Error removing PropertiesChanged match %s", err.Error())
+			return err
+		}
+	}
+	return nil
+}
+
 //scanForDevices - Scan for ble devices
 func (adapt *BleAdapter) scanForDevices(stopDiscoveryChannel <-chan bool, stopHandleDevicesChannel <-chan bool) {
 	//Retrieve the UUID's to filter on
-	uuidFilters := adapt.getDeviceFilters()
-	log.Println("UUID Filters retrieved = ", uuidFilters)
+	//TODO uuidFilters := adapt.getDeviceFilters()
+	//TODO log.Println("UUID Filters retrieved = ", uuidFilters)
+	uuidFilters := []string{"32F9169F-4FEB-4883-ADE6-1F0127018DB3"}
 
 	//Open a connection to the System Dbus to begin scanning
 	var err error
 	if adapt.connection, err = ble.Open(); err != nil {
+		log.Fatal(err)
+	}
+
+	//Add the DBus events the adapter should listen for
+	if err := adapt.addDbusEvents(); err != nil {
 		log.Fatal(err)
 	}
 
@@ -103,14 +174,20 @@ func (adapt *BleAdapter) scanForDevices(stopDiscoveryChannel <-chan bool, stopHa
 
 //ScanForDevices - Scan for ble devices
 func (adapt *BleAdapter) handleDeviceSignal(stopHandleDevicesChannel <-chan bool) {
-	log.Println("Waiting for BLE Devices")
+	log.Printf("Waiting for BLE Devices")
 
 	for {
 		select {
 		case device, ok := <-adapt.deviceChannel:
-			//TODO - Handle added, removed, and changed devices
+			//Handle added, removed, and changed devices
 			if ok {
-				adapt.handleDeviceAdded(device)
+				if string((*device).Path()) == "" {
+					//Device Properties changed
+					adapt.handleDeviceRemoved(device)
+				} else {
+					//Device Added or changed
+					adapt.handleDeviceAddedChanged(device)
+				}
 			}
 		case stopChannel, ok := <-stopHandleDevicesChannel:
 			if ok && stopChannel {
@@ -121,20 +198,20 @@ func (adapt *BleAdapter) handleDeviceSignal(stopHandleDevicesChannel <-chan bool
 	}
 }
 
-func (adapt *BleAdapter) handleDeviceAdded(device *ble.Device) {
-	log.Println("Device added = %#v", *device)
+func (adapt *BleAdapter) handleDeviceAddedChanged(device *ble.Device) {
 	if deviceJSON, err := adapt.createBleDeviceJSON(*device); err != nil {
 		log.Printf("error marshaling device into json: %s", err.Error())
 	} else {
 		log.Printf("Publishing message: %s", deviceJSON)
 
-		if err := adapt.cbDeviceClient.Publish(publishTopic, deviceJSON, msgPublishQos); err != nil {
+		if err := adapt.cbDeviceClient.Publish(adapt.cbDeviceClient.DeviceName+"/"+publishTopic, deviceJSON, msgPublishQos); err != nil {
 			log.Printf("Error occurred when publishing device to MQTT: %v", err)
 		}
 	}
 }
 
 func (adapt *BleAdapter) handleDeviceRemoved(device *ble.Device) {
+	log.Printf("Device removed = %#v", *device)
 }
 
 func (adapt *BleAdapter) getDeviceFilters() []string {
@@ -143,7 +220,7 @@ func (adapt *BleAdapter) getDeviceFilters() []string {
 	results, err := adapt.cbDeviceClient.GetDataByName(deviceFiltersCollectionName, &cb.Query{})
 
 	if err != nil || len(results["DATA"].([]interface{})) == 0 {
-		log.Println("No device filters enabled.")
+		log.Printf("No device filters enabled.")
 		return []string{}
 	}
 
@@ -162,7 +239,7 @@ func (adapt *BleAdapter) getAdapterConfig() error {
 	//Retrieve the adapter configuration row. Passing a nil query results in all rows being returned
 	results, err := adapt.cbDeviceClient.GetDataByName(adapterConfigCollectionName, &cb.Query{})
 	if err != nil {
-		log.Println("Adapter configuration could not be retrieved. Using defaults")
+		log.Printf("Adapter configuration could not be retrieved. Using defaults. Error: %s", err.Error())
 		return err
 	}
 
@@ -176,13 +253,22 @@ func (adapt *BleAdapter) getAdapterConfig() error {
 		pauseInterval = int64(results["DATA"].([]interface{})[0].(map[string]interface{})["discovery_pause_seconds"].(float64))
 	}
 
+	if results["DATA"].([]interface{})[0].(map[string]interface{})["handle_removed"] != nil &&
+		results["DATA"].([]interface{})[0].(map[string]interface{})["handle_removed"] == true {
+		pauseInterval = int64(results["DATA"].([]interface{})[0].(map[string]interface{})["discovery_pause_seconds"].(float64))
+	}
+
+	if results["DATA"].([]interface{})[0].(map[string]interface{})["handle_changed"] != nil &&
+		results["DATA"].([]interface{})[0].(map[string]interface{})["handle_changed"] == true {
+		pauseInterval = int64(results["DATA"].([]interface{})[0].(map[string]interface{})["discovery_pause_seconds"].(float64))
+	}
+
 	return nil
 }
 
 func (adapt *BleAdapter) createBleDeviceJSON(device ble.Device) ([]byte, error) {
 
 	//Create json to publish to mqtt
-	//Need manufacturer data, RSSI,
 	bleDevice := map[string]interface{}{}
 	bleDevice[devicePath] = device.Path()
 	bleDevice[deviceAddress] = device.Address()

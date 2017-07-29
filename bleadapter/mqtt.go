@@ -47,11 +47,11 @@ func Publish(topic string, message string) {
 
 	client := MQTT.NewClient(connOpts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		log.Println(token.Error())
+		log.Printf(token.Error().Error())
 		return
 	}
-	log.Println("Connected to %s\n", MQTT_SERVER)
+	log.Printf("Connected to %s\n", MQTT_SERVER)
 
-	log.Println("Publishing message %s to topic %s\n", message, topic)
+	log.Printf("Publishing message %s to topic %s\n", message, topic)
 	client.Publish(topic, byte(MSG_QOS), MSG_RETAINED, message)
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/clearblade/BLE-ADAPTER-GO/bleadapter"
 	cb "github.com/clearblade/Go-SDK"
+	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
 var (
@@ -59,19 +60,36 @@ func initCbDeviceClient() {
 	deviceClient = cb.NewDeviceClient(sysKey, sysSec, deviceName, password)
 
 	if platformURL != "" {
-		log.Println("setting custom platform URL to ", platformURL)
+		log.Printf("setting custom platform URL to %s", platformURL)
 		deviceClient.HttpAddr = platformURL
 	}
 
 	if messagingURL != "" {
-		log.Println("setting custom messaging URL to ", messagingURL)
+		log.Printf("setting custom messaging URL to %s", messagingURL)
 		deviceClient.MqttAddr = messagingURL
 	}
 }
 
 func main() {
+	_, err := os.OpenFile("/var/log/bleadapter.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+
+	if err != nil {
+		log.Printf("error opening file: %s", err.Error())
+		os.Exit(1)
+	}
+
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
 	flag.Usage = usage
 	validateFlags()
+
+	//Set rolling lofiles
+	log.SetOutput(&lumberjack.Logger{
+		Filename:   "/var/log/bleadapter.log",
+		MaxSize:    100, // megabytes
+		MaxBackups: 5,
+		MaxAge:     28, //days
+	})
 
 	//TODO - This would need a developer ID. May need to create a service account
 	//within the platform.

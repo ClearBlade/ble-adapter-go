@@ -28,7 +28,7 @@ func (char *blob) HandleNotify(handler NotifyHandler) error {
 		"type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',path='%s'",
 		path,
 	)
-	err := conn.addMatch(rule)
+	err := conn.AddMatch(rule)
 	if err != nil {
 		return err
 	}
