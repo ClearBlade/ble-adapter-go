@@ -116,10 +116,7 @@ func (adapt *BleAdapter) addDbusEvents() error {
 			return err
 		}
 	}
-	if err = adapt.connection.AddMatch(propertiesrule); err != nil {
-		log.Printf("Error adding PropertiesChanged match %s", err.Error())
-		return err
-	}
+
 	return nil
 }
 
@@ -149,9 +146,8 @@ func (adapt *BleAdapter) removeDbusEvents() error {
 //scanForDevices - Scan for ble devices
 func (adapt *BleAdapter) scanForDevices(stopDiscoveryChannel <-chan bool, stopHandleDevicesChannel <-chan bool) {
 	//Retrieve the UUID's to filter on
-	//TODO uuidFilters := adapt.getDeviceFilters()
-	//TODO log.Println("UUID Filters retrieved = ", uuidFilters)
-	uuidFilters := []string{"32F9169F-4FEB-4883-ADE6-1F0127018DB3"}
+	uuidFilters := adapt.getDeviceFilters()
+	log.Printf("UUID Filters retrieved = ", uuidFilters)
 
 	//Open a connection to the System Dbus to begin scanning
 	var err error
@@ -199,15 +195,45 @@ func (adapt *BleAdapter) handleDeviceSignal(stopHandleDevicesChannel <-chan bool
 }
 
 func (adapt *BleAdapter) handleDeviceAddedChanged(device *ble.Device) {
-	if deviceJSON, err := adapt.createBleDeviceJSON(*device); err != nil {
-		log.Printf("error marshaling device into json: %s", err.Error())
-	} else {
-		log.Printf("Publishing message: %s", deviceJSON)
+	if adapt.shouldPublishDevice(*device) == true {
+		if deviceJSON, err := adapt.createBleDeviceJSON(*device); err != nil {
+			log.Printf("error marshaling device into json: %s", err.Error())
+		} else {
+			log.Printf("Publishing message: %s", deviceJSON)
 
-		if err := adapt.cbDeviceClient.Publish(adapt.cbDeviceClient.DeviceName+"/"+publishTopic, deviceJSON, msgPublishQos); err != nil {
-			log.Printf("Error occurred when publishing device to MQTT: %v", err)
+			if err := adapt.cbDeviceClient.Publish(adapt.cbDeviceClient.DeviceName+"/"+publishTopic, deviceJSON, msgPublishQos); err != nil {
+				log.Printf("Error occurred when publishing device to MQTT: %v", err)
+			}
+		}
+	} else {
+		log.Printf("Device does not contain any uuid specified in the uuid filter. Skipping device: %#v", device)
+	}
+}
+
+func (adapt *BleAdapter) shouldPublishDevice(device ble.Device) bool {
+
+	//If device uuid filters were specified, ensure one of the UUID's exists
+	//in the uuids property for the device.
+	if len(uuidFilters) == 0 {
+		return true
+	}
+
+	//Loop over the uuid filter array
+	for _, uuid := range uuidFilters {
+		deviceUuids := device.UUIDs()
+
+		//If there are no uuids specified for the device, skip this device
+		if len(uuidFilters) == 0 {
+			return false
+		}
+		for _, deviceuuid := range deviceUuids {
+			if deviceuuid == uuid {
+				return true
+			}
 		}
 	}
+
+	return false
 }
 
 func (adapt *BleAdapter) handleDeviceRemoved(device *ble.Device) {
@@ -216,7 +242,7 @@ func (adapt *BleAdapter) handleDeviceRemoved(device *ble.Device) {
 
 func (adapt *BleAdapter) getDeviceFilters() []string {
 	//Retrieve the uuids that we wish to filter on
-	//var query cb.Query //A nil query results in all rows being returned
+	//var query cb.Query - A nil query results in all rows being returned
 	results, err := adapt.cbDeviceClient.GetDataByName(deviceFiltersCollectionName, &cb.Query{})
 
 	if err != nil || len(results["DATA"].([]interface{})) == 0 {
@@ -255,12 +281,12 @@ func (adapt *BleAdapter) getAdapterConfig() error {
 
 	if results["DATA"].([]interface{})[0].(map[string]interface{})["handle_removed"] != nil &&
 		results["DATA"].([]interface{})[0].(map[string]interface{})["handle_removed"] == true {
-		pauseInterval = int64(results["DATA"].([]interface{})[0].(map[string]interface{})["discovery_pause_seconds"].(float64))
+		handleRemoved = true
 	}
 
 	if results["DATA"].([]interface{})[0].(map[string]interface{})["handle_changed"] != nil &&
 		results["DATA"].([]interface{})[0].(map[string]interface{})["handle_changed"] == true {
-		pauseInterval = int64(results["DATA"].([]interface{})[0].(map[string]interface{})["discovery_pause_seconds"].(float64))
+		handleChanged = true
 	}
 
 	return nil

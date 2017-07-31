@@ -80,10 +80,7 @@ func main() {
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	flag.Usage = usage
-	validateFlags()
-
-	//Set rolling lofiles
+	//Set rolling logiles
 	log.SetOutput(&lumberjack.Logger{
 		Filename:   "/var/log/bleadapter.log",
 		MaxSize:    100, // megabytes
@@ -91,11 +88,8 @@ func main() {
 		MaxAge:     28, //days
 	})
 
-	//TODO - This would need a developer ID. May need to create a service account
-	//within the platform.
-	// If the command line arguments are valid, we need to verify the status
-	// of the data collections. If they do not exist, they need to be created
-	//
+	flag.Usage = usage
+	validateFlags()
 
 	initCbDeviceClient()
 	if err := deviceClient.Authenticate(); err != nil {
