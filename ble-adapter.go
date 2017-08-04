@@ -80,7 +80,7 @@ func main() {
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	//Set rolling logiles
+	//Set rolling log files
 	log.SetOutput(&lumberjack.Logger{
 		Filename:   "/var/log/bleadapter.log",
 		MaxSize:    100, // megabytes

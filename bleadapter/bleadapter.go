@@ -3,6 +3,7 @@ package bleadapter
 import (
 	"encoding/json"
 	"log"
+	"strings"
 	"time"
 
 	cb "github.com/clearblade/Go-SDK"
@@ -145,12 +146,17 @@ func (adapt *BleAdapter) removeDbusEvents() error {
 
 //scanForDevices - Scan for ble devices
 func (adapt *BleAdapter) scanForDevices(stopDiscoveryChannel <-chan bool, stopHandleDevicesChannel <-chan bool) {
-	//Retrieve the UUID's to filter on
-	uuidFilters := adapt.getDeviceFilters()
-	log.Printf("UUID Filters retrieved = ", uuidFilters)
+	//Retrieve the UUID's to filter on.  If an error is encountered, use the filters that were previously specified
+	theFilters, err := adapt.getDeviceFilters()
+
+	if err != nil {
+		log.Printf("Error encountered while retrieving UUID Filters: %s", err.Error())
+	} else {
+		log.Printf("UUID Filters retrieved = #%v", uuidFilters)
+		uuidFilters = theFilters
+	}
 
 	//Open a connection to the System Dbus to begin scanning
-	var err error
 	if adapt.connection, err = ble.Open(); err != nil {
 		log.Fatal(err)
 	}
@@ -227,7 +233,7 @@ func (adapt *BleAdapter) shouldPublishDevice(device ble.Device) bool {
 			return false
 		}
 		for _, deviceuuid := range deviceUuids {
-			if deviceuuid == uuid {
+			if strings.ToUpper(deviceuuid) == strings.ToUpper(uuid) {
 				return true
 			}
 		}
@@ -240,14 +246,17 @@ func (adapt *BleAdapter) handleDeviceRemoved(device *ble.Device) {
 	log.Printf("Device removed = %#v", *device)
 }
 
-func (adapt *BleAdapter) getDeviceFilters() []string {
+func (adapt *BleAdapter) getDeviceFilters() ([]string, error) {
 	//Retrieve the uuids that we wish to filter on
 	//var query cb.Query - A nil query results in all rows being returned
 	results, err := adapt.cbDeviceClient.GetDataByName(deviceFiltersCollectionName, &cb.Query{})
 
-	if err != nil || len(results["DATA"].([]interface{})) == 0 {
+	if err != nil {
+		return nil, err
+	}
+
+	if len(results["DATA"].([]interface{})) == 0 {
 		log.Printf("No device filters enabled.")
-		return []string{}
 	}
 
 	uuids := []string{}
@@ -258,7 +267,7 @@ func (adapt *BleAdapter) getDeviceFilters() []string {
 		}
 	}
 
-	return uuids
+	return uuids, nil
 }
 
 func (adapt *BleAdapter) getAdapterConfig() error {
@@ -282,11 +291,15 @@ func (adapt *BleAdapter) getAdapterConfig() error {
 	if results["DATA"].([]interface{})[0].(map[string]interface{})["handle_removed"] != nil &&
 		results["DATA"].([]interface{})[0].(map[string]interface{})["handle_removed"] == true {
 		handleRemoved = true
+	} else {
+		handleRemoved = false
 	}
 
 	if results["DATA"].([]interface{})[0].(map[string]interface{})["handle_changed"] != nil &&
 		results["DATA"].([]interface{})[0].(map[string]interface{})["handle_changed"] == true {
 		handleChanged = true
+	} else {
+		handleChanged = false
 	}
 
 	return nil
