@@ -83,7 +83,7 @@ func main() {
 	//Set rolling log files
 	log.SetOutput(&lumberjack.Logger{
 		Filename:   "/var/log/bleadapter.log",
-		MaxSize:    100, // megabytes
+		MaxSize:    10, // megabytes
 		MaxBackups: 5,
 		MaxAge:     28, //days
 	})
