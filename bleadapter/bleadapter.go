@@ -174,7 +174,7 @@ func (adapt *BleAdapter) scanForDevices(stopDiscoveryChannel <-chan bool, stopHa
 	go adapt.handleDeviceSignal(stopHandleDevicesChannel)
 }
 
-//ScanForDevices - Scan for ble devices
+//Wait for BLE Devices signals to be broadcasted from DBUS
 func (adapt *BleAdapter) handleDeviceSignal(stopHandleDevicesChannel <-chan bool) {
 	log.Printf("Waiting for BLE Devices")
 

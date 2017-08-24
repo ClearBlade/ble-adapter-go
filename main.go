@@ -100,6 +100,8 @@ func main() {
 		log.Fatalf("Unable to initialize MQTT: %s", err.Error())
 	}
 
-	bleAdapter := bleadapter.BleAdapter{}
+	bleAdapter := bleadapter.BleAdapter{
+		
+	}
 	bleAdapter.Start(deviceClient, scanInterval)
 }
