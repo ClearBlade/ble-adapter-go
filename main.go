@@ -4,10 +4,14 @@ import (
 	"flag"
 	"log"
 	"os"
+	"strings"
+	"time"
+
+	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/clearblade/BLE-ADAPTER-GO/bleadapter"
 	cb "github.com/clearblade/Go-SDK"
-	lumberjack "gopkg.in/natefinch/lumberjack.v2"
+	"github.com/hashicorp/logutils"
 )
 
 var (
@@ -18,6 +22,7 @@ var (
 	deviceName   string //See if we can get the edge device name dynamically
 	password     string
 	scanInterval int
+	logLevel     string
 
 	deviceClient *cb.DeviceClient
 )
@@ -35,6 +40,7 @@ func init() {
 	flag.StringVar(&platformURL, "platformURL", platURL, "platform url (optional)")
 	flag.StringVar(&messagingURL, "messagingURL", messURL, "messaging URL (optional)")
 	flag.IntVar(&scanInterval, "scanInterval", 360, "The number of seconds to scan for BLE devices (optional)")
+	flag.StringVar(&logLevel, "logLevel", "warn", "The level of logging to use. Available levels are 'debug', 'warn', 'error' (optional)")
 }
 
 func usage() {
@@ -49,28 +55,47 @@ func validateFlags() {
 		deviceName == "" ||
 		password == "" {
 
-		log.Printf("Missing required flags\n\n")
+		log.Printf("[ERROR] Missing required flags\n\n")
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	if logLevel != "error" && logLevel != "warn" && logLevel != "debug" {
+		log.Printf("[ERROR] Invalid log level specified\n\n")
 		flag.Usage()
 		os.Exit(1)
 	}
 }
 
-//create and initialize the clearblade platform device client
+//ClearBlade Device Client init helper
 func initCbDeviceClient() {
-	deviceClient = cb.NewDeviceClient(sysKey, sysSec, deviceName, password)
+	log.Printf("[DEBUG] setting platform URL to %s", platformURL)
+	log.Printf("[DEBUG] setting messaging URL to %s", messagingURL)
 
-	if platformURL != "" {
-		log.Printf("setting custom platform URL to %s", platformURL)
-		deviceClient.HttpAddr = platformURL
-	}
+	deviceClient = cb.NewDeviceClientWithAddrs(platformURL, messagingURL, sysKey, sysSec, deviceName, password)
 
-	if messagingURL != "" {
-		log.Printf("setting custom messaging URL to %s", messagingURL)
-		deviceClient.MqttAddr = messagingURL
+	for err := deviceClient.Authenticate(); err != nil; {
+		log.Printf("[WARN] Error authenticating platform broker: %s", err.Error())
+		log.Printf("[WARN] Will retry in 1 minute...")
+
+		// sleep 1 minute
+		time.Sleep(time.Duration(time.Minute * 1))
+		err = deviceClient.Authenticate()
 	}
 }
 
 func main() {
+	filter := &logutils.LevelFilter{
+		Levels:   []logutils.LogLevel{"DEBUG", "WARN", "ERROR"},
+		MinLevel: logutils.LogLevel(strings.ToUpper(logLevel)),
+		Writer:   os.Stderr,
+	}
+	log.SetOutput(filter)
+
+	flag.Usage = usage
+	log.Printf("[DEBUG] Validating command line options")
+	validateFlags()
+
 	_, err := os.OpenFile("/var/log/bleadapter.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 
 	if err != nil {
@@ -88,20 +113,11 @@ func main() {
 		MaxAge:     28, //days
 	})
 
-	flag.Usage = usage
-	validateFlags()
+	bleAdapter := bleadapter.BleAdapter{}
 
+	log.Printf("[DEBUG] Initializing CB device client")
 	initCbDeviceClient()
-	if err := deviceClient.Authenticate(); err != nil {
-		log.Fatalf("Error authenticating: %s", err.Error())
-	}
 
-	if err := deviceClient.InitializeMQTT("bleadapter_"+deviceName, "", 30, nil, nil); err != nil {
-		log.Fatalf("Unable to initialize MQTT: %s", err.Error())
-	}
-
-	bleAdapter := bleadapter.BleAdapter{
-		
-	}
+	log.Printf("[DEBUG] Starting BLE Adapter")
 	bleAdapter.Start(deviceClient, scanInterval)
 }

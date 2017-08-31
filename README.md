@@ -5,6 +5,9 @@ A Golang bluetooth adapter implementation utilizing BlueZ and DBUS that allows B
 BlueZ - https://git.kernel.org/cgit/bluetooth/bluez.git/tree/doc  
 DBUS - https://www.freedesktop.org/wiki/Software/dbus/
 
+## Compile for Raspberry Pi
+`GOOS=linux GOARCH=arm GOARM=6 go build`
+
 ## Status
 ---
 

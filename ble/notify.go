@@ -24,10 +24,7 @@ func (char *blob) HandleNotify(handler NotifyHandler) error {
 	if prev != nil {
 		return nil
 	}
-	rule := fmt.Sprintf(
-		"type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',path='%s'",
-		path,
-	)
+	rule := fmt.Sprintf(PropertiesRule+",path='%s'", path)
 	err := conn.AddMatch(rule)
 	if err != nil {
 		return err

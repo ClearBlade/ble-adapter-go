@@ -7,12 +7,16 @@ import (
 	"time"
 
 	cb "github.com/clearblade/Go-SDK"
-	"github.com/clearblade/ble-adapter-go/ble"
+	cbble "github.com/clearblade/ble-adapter-go/ble"
+	mqttTypes "github.com/clearblade/mqtt_parsing"
+	MQTT "github.com/eclipse/paho.mqtt.golang"
+	"github.com/godbus/dbus"
 )
 
 var (
-	uuidFilters  []string
-	publishTopic = devicePublishTopic
+	uuidFilters    []string
+	publishTopic   = devicePublishTopic
+	subscribeTopic = deviceSubscribeTopic
 
 	//Devices advertise at specific intervals. This should be set to at least 2N, where N is the
 	//amount of time associated with the advertising interval.
@@ -25,18 +29,23 @@ var (
 
 	handleRemoved = false //Should the InterfacesRemoved signal be handled
 	handleChanged = false //Should the PropertiesChanged signal be handled
+
+	//Channel used to send a signal to stop ble discovery
+	stopDiscoveryChannel chan bool
+
+	//Channel used to send a signal to stop listening for ble device discovery related signals
+	stopHandleDevicesChannel chan bool
+
+	//Channel used to send a signal to stop listening for ble commands
+	stopBleCommandsChannel chan bool
 )
 
 const (
-	//DBus signals
-	addrule        = "type='signal',interface='org.freedesktop.DBus.ObjectManager',member='InterfacesAdded'"
-	removerule     = "type='signal',interface='org.freedesktop.DBus.ObjectManager',member='InterfacesRemoved'"
-	propertiesrule = "type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged'"
-
 	deviceFiltersCollectionName = "BLE_Device_Filters"
 	adapterConfigCollectionName = "BLE_Adapter_Config"
-	devicePublishTopic          = "/bleadapter/bledevice"
-	msgPublishQos               = 2
+	devicePublishTopic          = "bleadapter/bledevice"
+	deviceSubscribeTopic        = "bleadapter/bledevice/command"
+	messagingQos                = 2
 	devicePath                  = "path"
 	deviceManufacturerData      = "manufacturer"
 	deviceAddress               = "address"
@@ -47,23 +56,48 @@ const (
 
 //BleAdapter - Struct that represents a BLE Adapter
 type BleAdapter struct {
-	connection     *ble.Connection
+	connection     *cbble.Connection
 	cbDeviceClient *cb.DeviceClient
-	deviceChannel  chan *ble.Device
+
+	//Channel used to receive ble device discovery related signals
+	deviceChannel chan *dbus.Signal
+
+	//Channel used to receive ble related commands (read/write) from the platform
+	bleCommandsChannel <-chan *mqttTypes.Publish
 }
 
 //Start - Starts execution of the BLEAdapter
 func (adapt *BleAdapter) Start(devClient *cb.DeviceClient, theScanInterval int) {
 	adapt.cbDeviceClient = devClient
 
+	log.Printf("[DEBUG] Initializing MQTT with callbacks")
+	var callbacks = &cb.Callbacks{OnConnectionLostCallback: adapt.OnConnectLost, OnConnectCallback: adapt.OnConnect}
+	if err := adapt.cbDeviceClient.InitializeMQTTWithCallback("bleadapter_"+adapt.cbDeviceClient.DeviceName, "", 30, nil, nil, callbacks); err != nil {
+		log.Fatalf("[ERROR] initCbClient: Unable to initialize MQTT connection: %s", err.Error())
+	}
+
 	if theScanInterval > 0 {
 		scanInterval = int64(theScanInterval)
 	}
 
-	stopDiscoveryChannel := make(chan bool)
-	stopHandleDevicesChannel := make(chan bool)
+	//Open a connection to the System Dbus to begin scanning
+	var connErr error
+	if adapt.connection, connErr = cbble.Open(); connErr != nil {
+		log.Fatal("[ERROR] " + connErr.Error())
+	}
+
+	stopDiscoveryChannel = make(chan bool)
+	stopHandleDevicesChannel = make(chan bool)
+
+	//Clean up after ourselves
 	defer close(stopDiscoveryChannel)
 	defer close(stopHandleDevicesChannel)
+
+	//Make sure we close the dbus connection
+	defer adapt.connection.Close()
+
+	//Start a separate process to listen for ble device discovery related signals
+	go adapt.handleBLECommands()
 
 	for true {
 		//Retrieve the adapter configuration from the CB Platform data collection
@@ -77,6 +111,7 @@ func (adapt *BleAdapter) Start(devClient *cb.DeviceClient, theScanInterval int) 
 		time.Sleep(interval)
 
 		if err := adapt.removeDbusEvents(); err != nil {
+			log.Printf("[ERROR] Error removing DBUS events: %s", err.Error())
 			return
 		}
 
@@ -88,32 +123,27 @@ func (adapt *BleAdapter) Start(devClient *cb.DeviceClient, theScanInterval int) 
 		interval = time.Duration(int64(pauseInterval) * time.Second.Nanoseconds())
 		time.Sleep(interval)
 	}
-
-	//TODO - Add code to connect to devices, pair with devices,
-	//read/write to/from devices
-	//
-	// 1. Create a channel to use to subscribe to BLE topics
-	// 2. Inifinitely read from channel and respond to BLE device requests
-	//
 }
 
+//addDbusEvents - Add DBUS signals we wish to handle to the DBUS connection
 func (adapt *BleAdapter) addDbusEvents() error {
+	log.Printf("[DEBUG] Adding DBUS events")
 	var err error
-	if err = adapt.connection.AddMatch(addrule); err != nil {
-		log.Printf("Error adding InterfacesAdded match: %s", err.Error())
+	if err = adapt.connection.AddMatch(cbble.AddRule); err != nil {
+		log.Printf("[ERROR] Error adding InterfacesAdded match: %s", err.Error())
 		return err
 	}
 
 	if handleRemoved == true {
-		if err = adapt.connection.AddMatch(removerule); err != nil {
-			log.Printf("Error adding InterfacesRemoved match %s", err.Error())
+		if err = adapt.connection.AddMatch(cbble.RemoveRule); err != nil {
+			log.Printf("[ERROR] Error adding InterfacesRemoved match %s", err.Error())
 			return err
 		}
 	}
 
 	if handleChanged == true {
-		if err = adapt.connection.AddMatch(propertiesrule); err != nil {
-			log.Printf("Error adding PropertiesChanged match %s", err.Error())
+		if err = adapt.connection.AddMatch(cbble.PropertiesRule); err != nil {
+			log.Printf("[ERROR] Error adding PropertiesChanged match %s", err.Error())
 			return err
 		}
 	}
@@ -121,23 +151,25 @@ func (adapt *BleAdapter) addDbusEvents() error {
 	return nil
 }
 
+//removeDbusEvents - Remove DBUS signal matches from the DBUS connection
 func (adapt *BleAdapter) removeDbusEvents() error {
+	log.Printf("[DEBUG] Removing DBUS events")
 	var err error
-	if err = adapt.connection.RemoveMatch(addrule); err != nil {
-		log.Printf("Error removing InterfacesAdded match: %s", err.Error())
+	if err = adapt.connection.RemoveMatch(cbble.AddRule); err != nil {
+		log.Printf("[ERROR] Error removing InterfacesAdded match: %s", err.Error())
 		return err
 	}
 
 	if handleRemoved == true {
-		if err = adapt.connection.RemoveMatch(removerule); err != nil {
-			log.Printf("Error removing InterfacesRemoved match %s", err.Error())
+		if err = adapt.connection.RemoveMatch(cbble.RemoveRule); err != nil {
+			log.Printf("[ERROR] Error removing InterfacesRemoved match %s", err.Error())
 			return err
 		}
 	}
 
 	if handleChanged == true {
-		if err = adapt.connection.RemoveMatch(propertiesrule); err != nil {
-			log.Printf("Error removing PropertiesChanged match %s", err.Error())
+		if err = adapt.connection.RemoveMatch(cbble.PropertiesRule); err != nil {
+			log.Printf("[ERROR] Error removing PropertiesChanged match %s", err.Error())
 			return err
 		}
 	}
@@ -150,49 +182,46 @@ func (adapt *BleAdapter) scanForDevices(stopDiscoveryChannel <-chan bool, stopHa
 	theFilters, err := adapt.getDeviceFilters()
 
 	if err != nil {
-		log.Printf("Error encountered while retrieving UUID Filters: %s", err.Error())
+		log.Printf("[ERROR] Error encountered while retrieving UUID Filters: %s", err.Error())
 	} else {
-		log.Printf("UUID Filters retrieved = #%v", uuidFilters)
+		log.Printf("[DEBUG] UUID Filters retrieved = #%v", uuidFilters)
 		uuidFilters = theFilters
-	}
-
-	//Open a connection to the System Dbus to begin scanning
-	if adapt.connection, err = ble.Open(); err != nil {
-		log.Fatal(err)
 	}
 
 	//Add the DBus events the adapter should listen for
 	if err := adapt.addDbusEvents(); err != nil {
-		log.Fatal(err)
+		log.Fatal("[ERROR] Error adding DBUS event: " + err.Error())
 	}
 
 	if adapt.deviceChannel = adapt.connection.StartDiscovery(stopDiscoveryChannel, uuidFilters...); adapt.deviceChannel == nil {
-		log.Fatal("Could not initiate discovery, shutting down BLE Adapter.")
+		log.Fatal("[ERROR] Could not initiate discovery, shutting down BLE Adapter.")
 	}
 
-	//Start a separate process to listen for ble device related events
-	go adapt.handleDeviceSignal(stopHandleDevicesChannel)
+	//Start a separate process to listen for ble device discovery related signals
+	go adapt.handleDBUSSignal(stopHandleDevicesChannel)
 }
 
-//Wait for BLE Devices signals to be broadcasted from DBUS
-func (adapt *BleAdapter) handleDeviceSignal(stopHandleDevicesChannel <-chan bool) {
+//handleDBUSSignal - Wait for DBUS signals to be broadcasted from DBUS
+func (adapt *BleAdapter) handleDBUSSignal(stopHandleDevicesChannel <-chan bool) {
 	log.Printf("Waiting for BLE Devices")
 
 	for {
 		select {
-		case device, ok := <-adapt.deviceChannel:
-			//Handle added, removed, and changed devices
+		case dbussignal, ok := <-adapt.deviceChannel:
 			if ok {
-				if string((*device).Path()) == "" {
-					//Device Properties changed
-					adapt.handleDeviceRemoved(device)
-				} else {
-					//Device Added or changed
-					adapt.handleDeviceAddedChanged(device)
+				log.Printf("[DEBUG] DBUS signal received: %#v", dbussignal)
+				switch dbussignal.Name {
+				case cbble.InterfacesAdded:
+					HandleInterfaceAdded(*adapt, dbussignal)
+				case cbble.InterfacesRemoved:
+					HandleInterfaceRemoved(*adapt, dbussignal)
+				case cbble.PropertiesChanged:
+					HandleDevicePropertyChanged(*adapt, dbussignal)
 				}
 			}
 		case stopChannel, ok := <-stopHandleDevicesChannel:
 			if ok && stopChannel {
+				log.Printf("[DEBUG] Ending handleDBUSSignal goroutine")
 				//End the current go routine when the stop discovery signal is received
 				return
 			}
@@ -200,40 +229,53 @@ func (adapt *BleAdapter) handleDeviceSignal(stopHandleDevicesChannel <-chan bool
 	}
 }
 
-func (adapt *BleAdapter) handleDeviceAddedChanged(device *ble.Device) {
-	if adapt.shouldPublishDevice(*device) == true {
-		if deviceJSON, err := adapt.createBleDeviceJSON(*device); err != nil {
-			log.Printf("error marshaling device into json: %s", err.Error())
-		} else {
-			log.Printf("Publishing message: %s", deviceJSON)
+//publishDevice
+//		1. Retrieve the BLE device from the DBUS object cache
+//		2. Verify the device contains the appropriate UUIDs
+//		3. Create a JSON representation for the device
+//		4. Publish the JSON to the platform
+func (adapt *BleAdapter) publishDevice(address string) {
+	if device, err := adapt.connection.GetDeviceByAddress(address); err == nil {
+		if adapt.shouldPublishDevice(&device) == true {
+			if deviceJSON, err := adapt.createBleDeviceJSON(&device); err != nil {
+				log.Printf("[ERROR] error marshaling device into json: %s", err.Error())
+			} else {
+				log.Printf("Publishing message: %s", deviceJSON)
 
-			if err := adapt.cbDeviceClient.Publish(adapt.cbDeviceClient.DeviceName+"/"+publishTopic, deviceJSON, msgPublishQos); err != nil {
-				log.Printf("Error occurred when publishing device to MQTT: %v", err)
+				if err := adapt.cbDeviceClient.Publish(adapt.cbDeviceClient.DeviceName+"/"+publishTopic, deviceJSON, messagingQos); err != nil {
+					log.Printf("[ERROR] Error occurred when publishing device to MQTT: %v", err)
+				}
 			}
+		} else {
+			log.Printf("[WARN] Device does not contain any uuid specified in the uuid filter. Skipping device: %#v", device)
 		}
 	} else {
-		log.Printf("Device does not contain any uuid specified in the uuid filter. Skipping device: %#v", device)
+		log.Printf(err.Error())
 	}
 }
 
-func (adapt *BleAdapter) shouldPublishDevice(device ble.Device) bool {
+//shouldPublishDevice - Ensure the device contains one of the UUIDs that are being filtered on
+func (adapt *BleAdapter) shouldPublishDevice(device *cbble.Device) bool {
 
 	//If device uuid filters were specified, ensure one of the UUID's exists
 	//in the uuids property for the device.
 	if len(uuidFilters) == 0 {
+		log.Printf("[DEBUG] No UUIDs being filtered on. shouldPublishDevice returning true")
 		return true
 	}
 
 	//Loop over the uuid filter array
 	for _, uuid := range uuidFilters {
-		deviceUuids := device.UUIDs()
+		deviceUuids := (*device).UUIDs()
 
 		//If there are no uuids specified for the device, skip this device
 		if len(uuidFilters) == 0 {
+			log.Printf("[DEBUG] No UUIDs on device. shouldPublishDevice returning false")
 			return false
 		}
 		for _, deviceuuid := range deviceUuids {
 			if strings.ToUpper(deviceuuid) == strings.ToUpper(uuid) {
+				log.Printf("[DEBUG] UUID found on device. shouldPublishDevice returning true")
 				return true
 			}
 		}
@@ -242,10 +284,7 @@ func (adapt *BleAdapter) shouldPublishDevice(device ble.Device) bool {
 	return false
 }
 
-func (adapt *BleAdapter) handleDeviceRemoved(device *ble.Device) {
-	log.Printf("Device removed = %#v", *device)
-}
-
+//getDeviceFilters - Retrieve the UUIDs that should be filtered on
 func (adapt *BleAdapter) getDeviceFilters() ([]string, error) {
 	//Retrieve the uuids that we wish to filter on
 	//var query cb.Query - A nil query results in all rows being returned
@@ -256,25 +295,28 @@ func (adapt *BleAdapter) getDeviceFilters() ([]string, error) {
 	}
 
 	if len(results["DATA"].([]interface{})) == 0 {
-		log.Printf("No device filters enabled.")
+		log.Printf("[DEBUG] No device filters enabled.")
 	}
 
 	uuids := []string{}
 
 	for i, uuid := range results["DATA"].([]interface{}) {
 		if results["DATA"].([]interface{})[i].(map[string]interface{})["enabled"].(bool) == true {
-			uuids = append(uuids, uuid.(map[string]interface{})["ble_uuid"].(string))
+			//DBUS uses lowercase characters in the uuids. Ensure we convert them to lowercase
+			uuids = append(uuids, strings.ToLower(uuid.(map[string]interface{})["ble_uuid"].(string)))
 		}
 	}
 
+	log.Printf("[DEBUG] Returning UUIDs to filter on: %#v", uuids)
 	return uuids, nil
 }
 
+//getAdapterConfig - Retrieve BLE Adapter configuration parameters from a platform data collection
 func (adapt *BleAdapter) getAdapterConfig() error {
 	//Retrieve the adapter configuration row. Passing a nil query results in all rows being returned
 	results, err := adapt.cbDeviceClient.GetDataByName(adapterConfigCollectionName, &cb.Query{})
 	if err != nil {
-		log.Printf("Adapter configuration could not be retrieved. Using defaults. Error: %s", err.Error())
+		log.Printf("[WARN] Adapter configuration could not be retrieved. Using defaults. Error: %s", err.Error())
 		return err
 	}
 
@@ -305,16 +347,175 @@ func (adapt *BleAdapter) getAdapterConfig() error {
 	return nil
 }
 
-func (adapt *BleAdapter) createBleDeviceJSON(device ble.Device) ([]byte, error) {
+//createBleDeviceJSON - Create a JSON representation of a BLE device
+func (adapt *BleAdapter) createBleDeviceJSON(device *cbble.Device) ([]byte, error) {
+	log.Printf("[DEBUG] Ceating device JSON")
 
 	//Create json to publish to mqtt
 	bleDevice := map[string]interface{}{}
-	bleDevice[devicePath] = device.Path()
-	bleDevice[deviceAddress] = device.Address()
-	bleDevice[deviceAlias] = device.Alias()
-	bleDevice[deviceUUIDs] = device.UUIDs()
-	bleDevice[deviceRSSI] = device.RSSI()
-	bleDevice[deviceManufacturerData] = device.ManufacturerData() //Need to stringify this
+	bleDevice[devicePath] = (*device).Path()
+	bleDevice[deviceAddress] = (*device).Address()
+	bleDevice[deviceAlias] = (*device).Alias()
+	bleDevice[deviceUUIDs] = (*device).UUIDs()
+
+	if rssi := (*device).RSSI(); rssi != -1 {
+		bleDevice[deviceRSSI] = rssi
+	}
+
+	bleDevice["interface"] = (*device).Interface()
+	bleDevice["name"] = (*device).Name()
+
+	if icon := (*device).Icon(); icon != "" {
+		bleDevice["icon"] = icon
+	}
+
+	if class := (*device).Class(); class != 0 {
+		bleDevice["class"] = class
+	}
+
+	if app := (*device).Appearance(); app != 0 {
+		bleDevice["appearance"] = app
+	}
+
+	if modalias := (*device).Modalias(); modalias != "" {
+		bleDevice["modalias"] = modalias
+	}
+
+	if txPower := (*device).TxPower(); txPower != -1 {
+		bleDevice["txPower"] = txPower
+	}
+
+	bleDevice[deviceManufacturerData] = (*device).ManufacturerData()
+	bleDevice["serviceData"] = (*device).ServiceData()
+	bleDevice["servicesResolved"] = (*device).ServicesResolved()
+
+	if advFlags := (*device).AdvertisingFlags(); len(advFlags) > 0 {
+		bleDevice["advertisingFlags"] = advFlags
+	}
+
+	bleDevice["paired"] = (*device).Paired()
+	bleDevice["connected"] = (*device).Connected()
+	bleDevice["trusted"] = (*device).Trusted()
+	bleDevice["blocked"] = (*device).Blocked()
+	bleDevice["adapter"] = (*device).Adapter()
+	bleDevice["legacyPairing"] = (*device).LegacyPairing()
 
 	return json.Marshal(bleDevice)
+}
+
+//handleBLECommands - Goroutine used to listen for BLE commands sent from the platform
+func (adapt *BleAdapter) handleBLECommands() {
+	//Wait for BLE Commands to be received from the platform.
+	//
+	// The structure of the command payload will need to resemble the following:
+	//
+	// {
+	//		"command": "read" | "write"
+	//		"deviceAddress": MAC address
+	//		"devicePath": ""
+	//		"gattCharacteristic" - (uuid)
+	//		"gattCharacteristicValue"
+	//		"stayConnected" - true|false
+	// }
+	//
+	log.Printf("Waiting for BLE Commands")
+
+	//As a command comes in, we need to start a new goroutine to handle the command
+	for {
+		select {
+		case message, ok := <-adapt.bleCommandsChannel:
+			//Process ble commands sent from the platform
+			if ok {
+				log.Printf("[DEBUG] BLE command received")
+
+				var blecommand map[string]interface{}
+
+				err := json.Unmarshal(message.Payload, &blecommand)
+				if err != nil {
+					log.Printf("[ERROR] Invalid JSON format received for BLE Command: %s", err.Error())
+				}
+
+				log.Printf("[DEBUG] Received BLE %s Command", blecommand["command"])
+
+				//Start a goroutine to process the command
+				go adapt.processBLECommand(blecommand)
+			}
+		case stopChannel, ok := <-stopBleCommandsChannel:
+			log.Printf("[DEBUG] Stop handleBLECommands received")
+			if ok && stopChannel {
+				//End the current go routine when the stop signal is received
+				log.Printf("[DEBUG] Stopping BLE command handler")
+				return
+			}
+		}
+	}
+}
+
+//processBLECommand - Goroutine used to process individual BLE commands sent from the platform
+func (adapt *BleAdapter) processBLECommand(theCommand map[string]interface{}) {
+	//Separate goroutine to handle individual ble commands
+	log.Printf("[DEBUG] Processing BLE command")
+
+	//Refresh the list of managed objects
+	if err := adapt.connection.Update(); err != nil {
+		log.Printf("[Error]Error updating object cache: %#v", err)
+	}
+
+	//Create a new BLECommand instance
+	bleCmd := NewBLECommand(adapt, theCommand)
+
+	if err := bleCmd.Execute(); err != nil {
+		log.Printf("[ERROR] Error while executing ble command: %s", err.Error())
+		bleCmd.sendError("BLE command failed. " + err.Error())
+		return
+	}
+
+	log.Printf("[DEBUG] BLE command success")
+	bleCmd.sendSuccess("BLE command " + bleCmd.command["command"].(string) + " executed successfully")
+	return
+}
+
+//OnConnectLost - MQTT callback invoked when a connection to a broker is lost
+//If the connection to the broker is lost, we need to reconnect and
+//re-establish all of the subscriptions
+func (adapt *BleAdapter) OnConnectLost(client MQTT.Client, connerr error) {
+	log.Printf("[WARN] Connection to broker was lost: %s", connerr.Error())
+
+	//End the existing goRoutines
+	log.Printf("[DEBUG] Stopping BLE commands channel")
+	stopBleCommandsChannel <- true
+
+	//Close the existing channels
+	log.Printf("[DEBUG] Closing BLE commands channel")
+	close(stopBleCommandsChannel)
+
+	//We don't need to worry about manally re-initializing the mqtt client. The auto reconnect logic will
+	//automatically try and reconnect. The reconnect interval could be as much as 20 minutes.
+}
+
+//OnConnect - MQTT callback invoked when a connection is established with a broker
+//When the connection to the broker is complete, set up the subscriptions
+func (adapt *BleAdapter) OnConnect(client MQTT.Client) {
+	log.Printf("Connected to ClearBlade Platform MQTT broker")
+	log.Printf("[DEBUG] Begin Configuring Subscription(s)")
+
+	var err error
+	log.Printf("[DEBUG] device client: %#v", adapt.cbDeviceClient)
+	log.Printf("[DEBUG] topic: %s", adapt.cbDeviceClient.DeviceName+"/"+subscribeTopic)
+	log.Printf("[DEBUG] qos: %d", messagingQos)
+
+	for adapt.bleCommandsChannel, err = adapt.cbDeviceClient.Subscribe(adapt.cbDeviceClient.DeviceName+"/"+subscribeTopic, messagingQos); err != nil; {
+		log.Printf("[WARN] Error subscribing to topics: %s", err.Error())
+
+		//Wait 30 seconds and retry
+		log.Printf("[DEBUG] Waiting 30 seconds to retry subscriptions")
+		time.Sleep(time.Duration(30 * time.Second))
+		adapt.bleCommandsChannel, err = adapt.cbDeviceClient.Subscribe(adapt.cbDeviceClient.DeviceName+"/"+subscribeTopic, messagingQos)
+	}
+
+	stopBleCommandsChannel = make(chan bool)
+
+	//Start the goRoutine to listen for ble commands published to the Platform
+	log.Printf("[DEBUG] Starting ble command listener")
+	go adapt.handleBLECommands()
 }
