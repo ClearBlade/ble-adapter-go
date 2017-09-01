@@ -85,15 +85,8 @@ func initCbDeviceClient() {
 }
 
 func main() {
-	filter := &logutils.LevelFilter{
-		Levels:   []logutils.LogLevel{"DEBUG", "WARN", "ERROR"},
-		MinLevel: logutils.LogLevel(strings.ToUpper(logLevel)),
-		Writer:   os.Stderr,
-	}
-	log.SetOutput(filter)
-
 	flag.Usage = usage
-	log.Printf("[DEBUG] Validating command line options")
+	log.Printf("Validating command line options")
 	validateFlags()
 
 	_, err := os.OpenFile("/var/log/bleadapter.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
@@ -106,12 +99,24 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	//Set rolling log files
-	log.SetOutput(&lumberjack.Logger{
-		Filename:   "/var/log/bleadapter.log",
-		MaxSize:    10, // megabytes
-		MaxBackups: 5,
-		MaxAge:     28, //days
-	})
+	// log.SetOutput(&lumberjack.Logger{
+	// 	Filename:   "/var/log/bleadapter.log",
+	// 	MaxSize:    10, // megabytes
+	// 	MaxBackups: 5,
+	// 	MaxAge:     28, //days
+	// })
+
+	filter := &logutils.LevelFilter{
+		Levels:   []logutils.LogLevel{"DEBUG", "WARN", "ERROR"},
+		MinLevel: logutils.LogLevel(strings.ToUpper(logLevel)),
+		Writer: &lumberjack.Logger{
+			Filename:   "/var/log/bleadapter.log",
+			MaxSize:    10, // megabytes
+			MaxBackups: 5,
+			MaxAge:     28, //days
+		},
+	}
+	log.SetOutput(filter)
 
 	bleAdapter := bleadapter.BleAdapter{}
 
