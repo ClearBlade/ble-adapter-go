@@ -87,6 +87,8 @@ func NewBLECommand(theBleAdapter *BleAdapter, jsoncommand map[string]interface{}
 		bleCommand.subCommands = append(bleCommand.subCommands, connect, write)
 	case "cancelpairing":
 		bleCommand.subCommands = append(bleCommand.subCommands, cancelPairing)
+	default:
+		return bleCommand
 	}
 
 	log.Printf("[DEBUG] bleCommand.subCommands: %#v", bleCommand.subCommands)

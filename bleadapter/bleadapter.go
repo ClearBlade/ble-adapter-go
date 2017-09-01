@@ -428,17 +428,8 @@ func (adapt *BleAdapter) handleBLECommands() {
 			if ok {
 				log.Printf("[DEBUG] BLE command received")
 
-				var blecommand map[string]interface{}
-
-				err := json.Unmarshal(message.Payload, &blecommand)
-				if err != nil {
-					log.Printf("[ERROR] Invalid JSON format received for BLE Command: %s", err.Error())
-				}
-
-				log.Printf("[DEBUG] Received BLE %s Command", blecommand["command"])
-
 				//Start a goroutine to process the command
-				go adapt.processBLECommand(blecommand)
+				go adapt.processBLECommand(message)
 			}
 		case stopChannel, ok := <-stopBleCommandsChannel:
 			log.Printf("[DEBUG] Stop handleBLECommands received")
@@ -452,9 +443,32 @@ func (adapt *BleAdapter) handleBLECommands() {
 }
 
 //processBLECommand - Goroutine used to process individual BLE commands sent from the platform
-func (adapt *BleAdapter) processBLECommand(theCommand map[string]interface{}) {
+func (adapt *BleAdapter) processBLECommand(message *mqttTypes.Publish) {
+
 	//Separate goroutine to handle individual ble commands
 	log.Printf("[DEBUG] Processing BLE command")
+
+	var blecommand map[string]interface{}
+
+	err := json.Unmarshal(message.Payload, &blecommand)
+	if err != nil {
+		log.Printf("[ERROR] Invalid JSON received for BLE Command: %s", err.Error())
+
+		blecommand = make(map[string]interface{})
+
+		//Send an error back to the platform
+		//Create a new JSON command
+		blecommand["command"] = ""
+		blecommand["err"] = true
+		blecommand["sentCommand"] = string(message.Payload)
+
+		//Create a new BLECommand instance
+		bleCmd := NewBLECommand(adapt, blecommand)
+		bleCmd.sendError("Invalid JSON received for BLE Command")
+		return
+	}
+
+	log.Printf("[DEBUG] Received BLE %s Command", blecommand["command"])
 
 	//Refresh the list of managed objects
 	if err := adapt.connection.Update(); err != nil {
@@ -462,7 +476,7 @@ func (adapt *BleAdapter) processBLECommand(theCommand map[string]interface{}) {
 	}
 
 	//Create a new BLECommand instance
-	bleCmd := NewBLECommand(adapt, theCommand)
+	bleCmd := NewBLECommand(adapt, blecommand)
 
 	if err := bleCmd.Execute(); err != nil {
 		log.Printf("[ERROR] Error while executing ble command: %s", err.Error())
