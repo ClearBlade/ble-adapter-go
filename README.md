@@ -98,12 +98,12 @@ enabled | boolean | Specifies whether or not filtering should be enabled for the
   * Defaults to __http://localhost:9000__
    
    __messagingURL__
-  * The MQTT url of the ClearBlade Platform instance the BLE Adapter will connect t0
+  * The MQTT url of the ClearBlade Platform instance the BLE Adapter will connect to
   * OPTIONAL
   * Defaults to __localhost:1883__
 
 ### Configuration
-
+The BLE adapter can be configured by changing the values specified within the row contained in the BLE_Adapter_Config data collection within the ClearBlade Platform. Changes made to any values will be applied prior to the start of a subsequent _discovery_ scan.
 
 ## Interacting with BLE Devices
 The BLE Adapter provides the ability to interact with BLE devices: connect, disconnect, pair, read data, write data, etc. In order to interact with a ble device, a JSON message containing command details must be published, via MQTT, to the ClearBlade Platform MQTT message broker (or a ClearBlade Edge message broker).

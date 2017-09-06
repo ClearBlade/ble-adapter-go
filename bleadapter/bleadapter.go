@@ -235,22 +235,22 @@ func (adapt *BleAdapter) handleDBUSSignal(stopHandleDevicesChannel <-chan bool) 
 //		3. Create a JSON representation for the device
 //		4. Publish the JSON to the platform
 func (adapt *BleAdapter) publishDevice(address string) {
-	if device, err := adapt.connection.GetDeviceByAddress(address); err == nil {
+	if device, geterr := adapt.connection.GetDeviceByAddress(address); geterr == nil {
 		if adapt.shouldPublishDevice(&device) == true {
-			if deviceJSON, err := adapt.createBleDeviceJSON(&device); err != nil {
-				log.Printf("[ERROR] error marshaling device into json: %s", err.Error())
+			if deviceJSON, jsonerr := adapt.createBleDeviceJSON(&device); jsonerr != nil {
+				log.Printf("[ERROR] error marshaling device into json: %s", jsonerr.Error())
 			} else {
 				log.Printf("Publishing message: %s", deviceJSON)
 
-				if err := adapt.cbDeviceClient.Publish(adapt.cbDeviceClient.DeviceName+"/"+publishTopic, deviceJSON, messagingQos); err != nil {
-					log.Printf("[ERROR] Error occurred when publishing device to MQTT: %v", err)
+				if puberr := adapt.cbDeviceClient.Publish(adapt.cbDeviceClient.DeviceName+"/"+publishTopic, deviceJSON, messagingQos); puberr != nil {
+					log.Printf("[ERROR] Error occurred when publishing device to MQTT: %v", puberr)
 				}
 			}
 		} else {
 			log.Printf("[WARN] Device does not contain any uuid specified in the uuid filter. Skipping device: %#v", device)
 		}
 	} else {
-		log.Printf(err.Error())
+		log.Printf(geterr.Error())
 	}
 }
 
@@ -496,12 +496,16 @@ func (adapt *BleAdapter) OnConnectLost(client MQTT.Client, connerr error) {
 	log.Printf("[WARN] Connection to broker was lost: %s", connerr.Error())
 
 	//End the existing goRoutines
+
 	log.Printf("[DEBUG] Stopping BLE commands channel")
 	stopBleCommandsChannel <- true
 
+	log.Printf("[DEBUG] Stopping DBUS signal channel")
+	stopHandleDevicesChannel <- true
+
 	//Close the existing channels
-	log.Printf("[DEBUG] Closing BLE commands channel")
-	close(stopBleCommandsChannel)
+	// log.Printf("[DEBUG] Closing BLE commands channel")
+	// close(stopBleCommandsChannel)
 
 	//We don't need to worry about manally re-initializing the mqtt client. The auto reconnect logic will
 	//automatically try and reconnect. The reconnect interval could be as much as 20 minutes.
@@ -527,9 +531,13 @@ func (adapt *BleAdapter) OnConnect(client MQTT.Client) {
 		adapt.bleCommandsChannel, err = adapt.cbDeviceClient.Subscribe(adapt.cbDeviceClient.DeviceName+"/"+subscribeTopic, messagingQos)
 	}
 
-	stopBleCommandsChannel = make(chan bool)
+	//stopBleCommandsChannel = make(chan bool)
 
 	//Start the goRoutine to listen for ble commands published to the Platform
 	log.Printf("[DEBUG] Starting ble command listener")
 	go adapt.handleBLECommands()
+
+	log.Printf("[DEBUG] Starting DBUS signal listener")
+	//Start the goRoutine to listen for ble device discovery related signals
+	go adapt.handleDBUSSignal(stopHandleDevicesChannel)
 }
