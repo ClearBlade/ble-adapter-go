@@ -1,17 +1,73 @@
 # BLE-ADAPTER-GO
 
-A Golang bluetooth adapter implementation utilizing BlueZ and DBUS that allows BLE devices to interact with the ClearBlade Platform.
+A GoLang bluetooth adapter implementation utilizing BlueZ and DBUS that allows BLE devices to interact with the ClearBlade Platform.
 
+Much of the code has been based off of the implementation found at https://github.com/ecc1/ble
+
+Additional information regarding BlueZ and DBUS can be found at the following links:
 BlueZ - https://git.kernel.org/cgit/bluetooth/bluez.git/tree/doc  
 DBUS - https://www.freedesktop.org/wiki/Software/dbus/
+
+## Operating System Dependencies
+The BLE Adapter is only supported on Linux operating systems with the following specifications:
+
+  * Linux - Minimum kernel version of 3.5 - http://www.bluez.org/release-of-bluez-5-0/  
+  * BlueZ - The minimum version of BlueZ with BLE support is 5.40. It is recommended to install at least BlueZ version 5.44 (5.46 is the most current version).
+
+## Cross compile GoLang for Raspberry Pi
+`GOOS=linux GOARCH=arm GOARM=6 go build`
 
 ## Status
 ---
 
-The adapter currently only supports the ability to discover BLE devices and subsequently forward BLE device details to the ClearBlade platform. Additional work will need to be done to provide the ability to read from and write to devices.
+The adapter currently supports the following:
+  1. Discover BLE devices and forward device properties to the ClearBlade platform
+  2. Pairing with BLE devices
+  3. Cancelling pairing with BLE devices
+  4. Removing (unpairing) BLE devices
+  5. Connecting to BLE devices
+  6. Disconnecting from BLE devices
+  7. Reading characteristic values from BLE devices
+  8. Writing characteristic values to BLE devices
+
+## ClearBlade Platform Dependencies
+The BLE Adapter was constructed to allow BLE devices to communicate with a _System_ defined in a ClearBlade Platform instance. Therefore, the BLE Adapter requires a _System_ to have been created within a ClearBlade Platform instance.
+
+Once a System has been created, artifacts must be defined within the ClearBlade Platform system to allow the BLE Adapter to function properly. At a minimum, the following artifacts __MUST__ be created within a ClearBlade Platform System:
+
+* Auth --> Devices
+  * A row representing the physical gateway/device the BLE Adapter will be executing on
+  * The value specified in the _name_ column will be used as the value of the __deviceName__ argument specified in the BLE Adapter start-up command
+  * The value specified in the _active\_key_ column will be used as the value of the __password__ argument specified in the BLE Adapter start-up command
+
+* BLE\_Adapter\_Config
+  * A data collection containing a single row
+  * Provides the ability to specify runtime configuration options
+
+
+* BLE\_Device\_Filters
+  * A data collection that provides the ability to dynamically pass BLE _service advertisement_ uuids into the device discovery process, via Adapter.setDiscoveryFilter
+  * Discovery filters provide a mechanism to target specific BLE devices
+  * __CAVEAT:__ Discovery filtering will only work if the BLE device specifies a service UUID in its advertisement payload.
+
+###BLE\_Adapter\_Config Schema
+Column Name | Column Data Type | Column Description
+----------- | ---------------- | ------------------
+publish\_topic | string | The MQTT topic to use when publishing to the platform (the specified topic will be prepended with _deviceName_/, where deviceName is the value of the __deviceName__ argument specified on the start-up command)
+discovery\_scan\_seconds | integer | Specifies the length of time a BLE device discovery scan should run
+discovery\_pause\_seconds | integer | Specifies the length of time to pause between BLE device discovery scans
+handle\_removed | boolean | Specifies whether or not the BLE adapter should handle DBUS _InterfaceRemoved_ signals
+handle\_changed | boolean | Specifies whether or not the BLE adapter should handle DBUS _PropertiesChanged_ signals
+
+###BLE\_Device\_Filters Schema
+Column Name | Column Data Type | Column Description
+----------- | ---------------- | ------------------
+ble\_uuid | string | The _service advertisement_ uuid, optionally broadcasted by a BLE device, to allow for limiting the BLE devices that are discovered by the BLE adapter
+enabled | boolean | Specifies whether or not filtering should be enabled for the specified UUID
 
 ## Usage
----
+
+### Starting the ble adapter
 
 `ble-adapter-go -systemKey <PLATFORM SYSTEM KEY> -systemSecret <PLATFORM SYSTEM SECRET> -deviceName <AUTH DEVICE NAME> -password <AUTH DEVICE PASSWORD> -platformURL <CB PLATFORM URL> -messagingURL <CB PLATFORM MESSAGING URL>`
 
@@ -19,35 +75,105 @@ The adapter currently only supports the ability to discover BLE devices and subs
 
    __systemKey__
   * REQUIRED
-  * The system key of the ClearBLade Platform __System__ the adapter will be connecting to
+  * The system key of the ClearBLade Platform __System__ the BLE adapter connect to
 
    __systemSecret__
   * REQUIRED
-  * The system secret of the ClearBLade Platform __System__ the adapter will be connecting to
+  * The system secret of the ClearBLade Platform __System__ the BLE adapter connect to
    
    __deviceName__
   * REQUIRED
-  * The name of the device the adapter will authenticate to the platform with.
-  * Requires the device to have been defined within the ClearBlade Platform __System__
+  * The device name the BLE adapter will use to authenticate to the ClearBlade Platform
+  * Requires the device to have been defined in the _Auth - Devices_ collection within the ClearBlade Platform __System__
    
    __password__
   * REQUIRED
-  * The password the adapter will use to authenticate to the platform with.
-  * Requires the device to have been defined within the ClearBlade Platform __System__
+  * The password the BLE adapter will use to authenticate to the platform with.
+  * Requires the device to have been defined in the _Auth - Devices_ collection within the ClearBlade Platform __System__
   * In most cases the __active_key__ of the device will be used as the password
    
    __platformURL__
+  * The url of the ClearBlade Platform instance the BLE Adapter will connect to
   * OPTIONAL
   * Defaults to __http://localhost:9000__
    
    __messagingURL__
+  * The MQTT url of the ClearBlade Platform instance the BLE Adapter will connect to
   * OPTIONAL
   * Defaults to __localhost:1883__
 
-## Dependencies
-  * Linux - Minimum kernel version of 3.5 - http://www.bluez.org/release-of-bluez-5-0/  
-  * BlueZ - The minimum version of BlueZ with BLE support is 5.40. It is recommended to install at least BlueZ version 5.44 (5.45 is the most current version).
+### Configuration
+The BLE adapter can be configured by changing the values specified within the row contained in the BLE_Adapter_Config data collection within the ClearBlade Platform. Changes made to any values will be applied prior to the start of a subsequent _discovery_ scan.
 
+## Interacting with BLE Devices
+The BLE Adapter provides the ability to interact with BLE devices: connect, disconnect, pair, read data, write data, etc. In order to interact with a ble device, a JSON message containing command details must be published, via MQTT, to the ClearBlade Platform MQTT message broker (or a ClearBlade Edge message broker).
+
+### JSON Message Format
+The JSON message format expected by the BLE Adapter is as follows:
+
+```json
+{
+	"command": "write",
+	"deviceAddress": "00:0B:57:36:73:9F",
+	"devicePath": "/org/bluez/hci0/dev_00_0B_57_36_73_9F",
+	"gattCharacteristic": "FCB89C40-C603-59F3-7DC3-5ECE444A401B",
+	"gattCharacteristicValue": [12, 23, 43, 45],
+	"stayConnected": true
+}
+```
+
+  command
+   * The command to execute on the device. The command should be one of:
+      * pair
+      * remove
+      * connect
+      * disconnect
+      * read
+      * write
+      * cancelPairing
+
+  deviceAddress
+   * The device MAC address
+   * Contained within the _mac\_address_ column of the __BLE\_Devices__ data collection within the ClearBlade Platform  
+
+  devicePath
+   * The DBUS object path
+   * Can be determined by utilizing a utility such as __D Feet__ 
+   * Contained within the JSON stored in the _device\_json_ column of the __BLE\_Devices__ data collection within the ClearBlade Platform  
+
+  gattCharacteristic
+   * GATT Characteristic UUID
+
+  gattCharacteristicValue
+   * The value to of the specified _gattCharacteristic_
+   * Must be specified as an array of 8-bit integers (translates to a byte array in lower level programming languages)
+     * [12, 248, 255]
+   * Returned in the response payload for __read__ commands
+   * Required as input for __write__ commands
+
+  stayConnected
+   * Should the BLE adapter in the linux operating system remain connected to the BLE device after the command runs?
+   * __true__|__false__
+   * The default value, if not specified, is __false__
+
+### Sending BLE Command Requests
+To send a command request to a BLE device, JSON data in the format specified above should be published to the ClearBlade Platform or a ClearBlade Edge message broker. The MQTT topic name to publish to MUST be _**{Device Name}/bleadapter/bledevice/command**_, where _{Device Name}_ is the value of the __deviceName__ argument specified in the BLE Adapter start-up command.
+
+#### BLE Command Responses
+Responses to BLE commands will be published back to the ClearBlade Platform or ClearBlade Edge, thus allowing code triggers and code services to act on those responses. The responses will be published as a JSON payload. The JSON payload representing the response is a copy of the request payload with additional _err_ and _response_ members added. The _err_ member is a boolean indicator denoting whether an error occurred. The _response_ member is a string providing a description of the outcome of the command.
+
+```json
+{
+	"command": "write",
+	"deviceAddress": "00:0B:57:36:73:9F",
+	"devicePath": "/org/bluez/hci0/dev_00_0B_57_36_73_9F",
+	"gattCharacteristic": "FCB89C40-C603-59F3-7DC3-5ECE444A401B",
+	"gattCharacteristicValue": [12, 23, 43, 45],
+	"stayConnected": true,
+  "err": false,
+  "response": "BLE command write executed successfully"
+}
+```
 
 ## Setup
 ---
@@ -169,6 +295,5 @@ Upgrade BlueZ to version 5.43 at the minimum
 
 ## Todo
 ---
- - Add Device read / write
  - Add unit tests
  - Add and generate docs with examples
