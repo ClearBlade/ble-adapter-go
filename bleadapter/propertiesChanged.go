@@ -73,7 +73,26 @@ func HandleDevicePropertyChanged(adapt BleAdapter, signal *dbus.Signal) {
 	// RSSI
 	// TxPower
 	// ServicesResolved
-	log.Printf("[DEBUG] In HandleDevicePropertyChanged. No implementation yet.")
+
+	//May need to add property specific processing later
+
+	//Publish the device to the platform
+	//&dbus.Signal{
+	//	Sender:":1.3",
+	//	Path:"/org/bluez/hci0/dev_A0_E6_F8_8A_4D_5C",
+	//	Name:"org.freedesktop.DBus.Properties.PropertiesChanged",
+	//	Body:[]interface {}{
+	//		"org.bluez.Device1",
+	//		map[string]dbus.Variant{
+	//			"RSSI":dbus.Variant{sig:dbus.Signature{str:"n"}, value:-59}
+	//		},
+	//		[]string{}
+	//	}
+	//}
+
+	//Get the mac address from the device path
+	log.Printf("[DEBUG] HandleDevicePropertyChanged - Publishing device to platform: %s", string(signal.Path))
+	adapt.publishDevice(cbble.ParseAddressFromPath(string(signal.Path)))
 }
 
 //HandleGattServicePropertyChanged - Future development

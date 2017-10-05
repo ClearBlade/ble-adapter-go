@@ -78,6 +78,8 @@ func (adapter *blob) Discover(deviceChannel chan<- *dbus.Signal, stopDiscoveryCh
 		return
 	}
 
+	log.Printf("Discovery stopped. Exiting Discover method()")
+
 	return
 }
 
@@ -98,8 +100,9 @@ func (adapter *blob) discoverLoop(deviceChannel chan<- *dbus.Signal, uuids []str
 			}
 		case stopChannel := <-stopDiscoveryChannel:
 			if stopChannel {
+				log.Printf("[DEBUG] Stop discovery signal received")
 				adapter.StopDiscovery()
-
+				log.Printf("[DEBUG] Ending discover loop")
 				return nil
 			}
 		}

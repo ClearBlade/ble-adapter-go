@@ -14,9 +14,10 @@ import (
 )
 
 var (
-	uuidFilters    []string
-	publishTopic   = devicePublishTopic
-	subscribeTopic = deviceSubscribeTopic
+	uuidFilters     []string
+	publishTopic    = devicePublishTopic
+	subscribeTopic  = deviceSubscribeTopic
+	mqttIsConnected = false
 
 	//Devices advertise at specific intervals. This should be set to at least 2N, where N is the
 	//amount of time associated with the advertising interval.
@@ -33,11 +34,11 @@ var (
 	//Channel used to send a signal to stop ble discovery
 	stopDiscoveryChannel chan bool
 
-	//Channel used to send a signal to stop listening for ble device discovery related signals
-	stopHandleDevicesChannel chan bool
-
 	//Channel used to send a signal to stop listening for ble commands
 	stopBleCommandsChannel chan bool
+
+	//Channel used to send a signal to stop listening for ble commands
+	stopScanLoopChannel chan bool
 )
 
 const (
@@ -87,42 +88,91 @@ func (adapt *BleAdapter) Start(devClient *cb.DeviceClient, theScanInterval int) 
 	}
 
 	stopDiscoveryChannel = make(chan bool)
-	stopHandleDevicesChannel = make(chan bool)
 
 	//Clean up after ourselves
 	defer close(stopDiscoveryChannel)
-	defer close(stopHandleDevicesChannel)
 
 	//Make sure we close the dbus connection
 	defer adapt.connection.Close()
 
-	//Start a separate process to listen for ble device discovery related signals
-	go adapt.handleBLECommands()
-
 	for true {
-		//Retrieve the adapter configuration from the CB Platform data collection
-		adapt.getAdapterConfig()
-		log.Printf("Beginning scan. Scan duration = %d", scanInterval)
+		//If the MQTT Client is not connected to the platform broker,
+		//there's no need to scan.
+		if mqttIsConnected {
+			log.Printf("[DEBUG] MQTT is connected.")
 
-		adapt.scanForDevices(stopDiscoveryChannel, stopHandleDevicesChannel)
+			//Refresh the list of managed dbus objects so that updates to the
+			//Discovering property are properly reflected
+			adapt.connection.Update()
+			if deviceAdapter, adaptErr := adapt.connection.GetAdapter(); adaptErr != nil {
+				log.Printf("[ERROR] Device BLE adapter could not be retrieved: %s", adaptErr.Error())
+				log.Printf("[DEBUG] Waiting 30 seconds before retrying device BLE adapter retrieval.")
+				time.Sleep(time.Duration(30 * time.Second.Nanoseconds()))
+			} else {
+				if deviceAdapter.Discovering() == false {
+					log.Printf("[DEBUG] Device ble adapter is not discovering.")
 
-		// wait until the interval elapses
-		interval := time.Duration(int64(scanInterval) * time.Second.Nanoseconds())
-		time.Sleep(interval)
+					//Retrieve the adapter configuration from the CB Platform data collection
+					adapt.getAdapterConfig()
+					log.Printf("Beginning scan. Scan duration = %d", scanInterval)
 
-		if err := adapt.removeDbusEvents(); err != nil {
-			log.Printf("[ERROR] Error removing DBUS events: %s", err.Error())
-			return
+					stopScanLoopChannel = make(chan bool)
+
+					adapt.scanForDevices(stopDiscoveryChannel)
+
+					//If a scan interval was specified wait until the interval elapses
+					var timer *time.Timer
+					if scanInterval > 0 {
+						timer = time.AfterFunc(time.Duration(int64(scanInterval)*time.Second.Nanoseconds()), func() {
+							adapt.stopDiscoveryScan()
+						})
+					}
+
+					//Wait for the stop loop command
+					for stopLoop := range stopScanLoopChannel {
+						if timer != nil {
+							timer.Stop()
+						}
+						if stopLoop {
+							log.Printf("[DEBUG] Stopping the scan loop")
+							close(stopScanLoopChannel)
+						} else {
+							log.Printf("[DEBUG] Invalid value received for stoploop: %t", stopLoop)
+						}
+					}
+
+					if scanInterval > 0 && pauseInterval > 0 {
+						// wait until the pause interval elapses
+						log.Printf("Beginning pause. Pause duration = %d", pauseInterval)
+						time.Sleep(time.Duration(int64(pauseInterval) * time.Second.Nanoseconds()))
+					}
+				} else {
+					log.Printf("[DEBUG] Device ble adapter is STILL discovering.")
+					time.Sleep(time.Duration(5 * time.Second.Nanoseconds()))
+				}
+			}
+		} else {
+			log.Printf("[DEBUG] Cannot start BLE Scan, waiting 10 seconds for MQTT connection to be established.")
+			time.Sleep(time.Duration(10 * time.Second.Nanoseconds()))
 		}
-
-		//Write to the stopDiscovery channel so that scanning is stopped
-		stopDiscoveryChannel <- true
-
-		// wait until the interval elapses
-		log.Printf("Beginning pause. Pause duration = %d", pauseInterval)
-		interval = time.Duration(int64(pauseInterval) * time.Second.Nanoseconds())
-		time.Sleep(interval)
+		log.Printf("[DEBUG] Starting next loop iteration")
 	}
+}
+
+//stopDiscoveryScan - Stop the BLE discovery process
+func (adapt *BleAdapter) stopDiscoveryScan() {
+	//Remove the dbus events prior to stopping discovery so that a write to
+	//a closed channel does not occurr
+	if err := adapt.removeDbusEvents(); err != nil {
+		log.Printf("[ERROR] Error removing DBUS events: %s", err.Error())
+	}
+
+	//End the existing goRoutines
+	log.Printf("[DEBUG] Stopping BLE discovery")
+	stopDiscoveryChannel <- true
+	stopScanLoopChannel <- true
+
+	log.Printf("[DEBUG] Returning from stopDiscoveryScan")
 }
 
 //addDbusEvents - Add DBUS signals we wish to handle to the DBUS connection
@@ -177,7 +227,7 @@ func (adapt *BleAdapter) removeDbusEvents() error {
 }
 
 //scanForDevices - Scan for ble devices
-func (adapt *BleAdapter) scanForDevices(stopDiscoveryChannel <-chan bool, stopHandleDevicesChannel <-chan bool) {
+func (adapt *BleAdapter) scanForDevices(stopDiscoveryChannel <-chan bool) {
 	//Retrieve the UUID's to filter on.  If an error is encountered, use the filters that were previously specified
 	theFilters, err := adapt.getDeviceFilters()
 
@@ -198,35 +248,30 @@ func (adapt *BleAdapter) scanForDevices(stopDiscoveryChannel <-chan bool, stopHa
 	}
 
 	//Start a separate process to listen for ble device discovery related signals
-	go adapt.handleDBUSSignal(stopHandleDevicesChannel)
+	go adapt.handleDBUSSignal()
 }
 
 //handleDBUSSignal - Wait for DBUS signals to be broadcasted from DBUS
-func (adapt *BleAdapter) handleDBUSSignal(stopHandleDevicesChannel <-chan bool) {
+func (adapt *BleAdapter) handleDBUSSignal() {
 	log.Printf("Waiting for BLE Devices")
 
-	for {
-		select {
-		case dbussignal, ok := <-adapt.deviceChannel:
-			if ok {
-				log.Printf("[DEBUG] DBUS signal received: %#v", dbussignal)
-				switch dbussignal.Name {
-				case cbble.InterfacesAdded:
-					HandleInterfaceAdded(*adapt, dbussignal)
-				case cbble.InterfacesRemoved:
-					HandleInterfaceRemoved(*adapt, dbussignal)
-				case cbble.PropertiesChanged:
-					HandleDevicePropertyChanged(*adapt, dbussignal)
-				}
-			}
-		case stopChannel, ok := <-stopHandleDevicesChannel:
-			if ok && stopChannel {
-				log.Printf("[DEBUG] Ending handleDBUSSignal goroutine")
-				//End the current go routine when the stop discovery signal is received
-				return
-			}
+	//Range over the device channel. When the channel is closed
+	//this goroutine will end. The channel is closed automatically
+	//when discovery is stopped
+	for dbussignal := range adapt.deviceChannel {
+		log.Printf("[DEBUG] DBUS signal received: %#v", dbussignal)
+		switch dbussignal.Name {
+		case cbble.InterfacesAdded:
+			HandleInterfaceAdded(*adapt, dbussignal)
+		case cbble.InterfacesRemoved:
+			HandleInterfaceRemoved(*adapt, dbussignal)
+		case cbble.PropertiesChanged:
+			HandlePropertyChanged(*adapt, dbussignal)
 		}
 	}
+
+	log.Printf("[DEBUG] adapt.deviceChannel closed. Ending goroutine")
+	return
 }
 
 //publishDevice
@@ -235,6 +280,11 @@ func (adapt *BleAdapter) handleDBUSSignal(stopHandleDevicesChannel <-chan bool) 
 //		3. Create a JSON representation for the device
 //		4. Publish the JSON to the platform
 func (adapt *BleAdapter) publishDevice(address string) {
+	//Refresh the list of managed objects
+	if err := adapt.connection.Update(); err != nil {
+		log.Printf("[Error]Error updating object cache: %#v", err)
+	}
+
 	if device, geterr := adapt.connection.GetDeviceByAddress(address); geterr == nil {
 		if adapt.shouldPublishDevice(&device) == true {
 			if deviceJSON, jsonerr := adapt.createBleDeviceJSON(&device); jsonerr != nil {
@@ -349,7 +399,7 @@ func (adapt *BleAdapter) getAdapterConfig() error {
 
 //createBleDeviceJSON - Create a JSON representation of a BLE device
 func (adapt *BleAdapter) createBleDeviceJSON(device *cbble.Device) ([]byte, error) {
-	log.Printf("[DEBUG] Ceating device JSON")
+	log.Printf("[DEBUG] Creating device JSON")
 
 	//Create json to publish to mqtt
 	bleDevice := map[string]interface{}{}
@@ -421,6 +471,10 @@ func (adapt *BleAdapter) handleBLECommands() {
 	log.Printf("Waiting for BLE Commands")
 
 	//As a command comes in, we need to start a new goroutine to handle the command
+
+	//We have to use the stopBleCommandsChannel because the bleCommandsChannel,
+	//returned from MQTT subscription, is read-only and we can't close it.
+	//Disconnecting from the message broker isn't closing the channel
 	for {
 		select {
 		case message, ok := <-adapt.bleCommandsChannel:
@@ -432,8 +486,9 @@ func (adapt *BleAdapter) handleBLECommands() {
 				go adapt.processBLECommand(message)
 			}
 		case stopChannel, ok := <-stopBleCommandsChannel:
-			log.Printf("[DEBUG] Stop handleBLECommands received")
-			if ok && stopChannel {
+			log.Printf("[DEBUG] Stop handleBLECommands received, value = %t", stopChannel)
+			log.Printf("[DEBUG] Channel ok value = %t", ok)
+			if !ok || stopChannel {
 				//End the current go routine when the stop signal is received
 				log.Printf("[DEBUG] Stopping BLE command handler")
 				return
@@ -495,17 +550,18 @@ func (adapt *BleAdapter) processBLECommand(message *mqttTypes.Publish) {
 func (adapt *BleAdapter) OnConnectLost(client MQTT.Client, connerr error) {
 	log.Printf("[WARN] Connection to broker was lost: %s", connerr.Error())
 
-	//End the existing goRoutines
+	mqttIsConnected = false
 
+	//Stop ble scanning
+	adapt.stopDiscoveryScan()
+
+	//End the existing goRoutines
 	log.Printf("[DEBUG] Stopping BLE commands channel")
 	stopBleCommandsChannel <- true
 
-	log.Printf("[DEBUG] Stopping DBUS signal channel")
-	stopHandleDevicesChannel <- true
-
 	//Close the existing channels
-	// log.Printf("[DEBUG] Closing BLE commands channel")
-	// close(stopBleCommandsChannel)
+	log.Printf("[DEBUG] Closing BLE commands channel")
+	close(stopBleCommandsChannel)
 
 	//We don't need to worry about manally re-initializing the mqtt client. The auto reconnect logic will
 	//automatically try and reconnect. The reconnect interval could be as much as 20 minutes.
@@ -515,6 +571,8 @@ func (adapt *BleAdapter) OnConnectLost(client MQTT.Client, connerr error) {
 //When the connection to the broker is complete, set up the subscriptions
 func (adapt *BleAdapter) OnConnect(client MQTT.Client) {
 	log.Printf("Connected to ClearBlade Platform MQTT broker")
+	mqttIsConnected = true
+
 	log.Printf("[DEBUG] Begin Configuring Subscription(s)")
 
 	var err error
@@ -531,13 +589,9 @@ func (adapt *BleAdapter) OnConnect(client MQTT.Client) {
 		adapt.bleCommandsChannel, err = adapt.cbDeviceClient.Subscribe(adapt.cbDeviceClient.DeviceName+"/"+subscribeTopic, messagingQos)
 	}
 
-	//stopBleCommandsChannel = make(chan bool)
+	stopBleCommandsChannel = make(chan bool)
 
 	//Start the goRoutine to listen for ble commands published to the Platform
 	log.Printf("[DEBUG] Starting ble command listener")
 	go adapt.handleBLECommands()
-
-	log.Printf("[DEBUG] Starting DBUS signal listener")
-	//Start the goRoutine to listen for ble device discovery related signals
-	go adapt.handleDBUSSignal(stopHandleDevicesChannel)
 }

@@ -46,11 +46,6 @@ func HandleInterfaceAdded(adapt BleAdapter, signal *dbus.Signal) {
 	// elem 1 - The path of the DBUS interface that was added
 	// elem 2 - A map of the DBUS Interfaces that were added
 
-	//Refresh the list of managed objects
-	if err := adapt.connection.Update(); err != nil {
-		log.Printf("[Error]Error updating object cache: %#v", err)
-	}
-
 	//Get the interface properties
 	props := cbble.GetInterfaceProperties(signal)
 
