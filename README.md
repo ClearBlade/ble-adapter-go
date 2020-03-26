@@ -1,6 +1,6 @@
 # BLE-ADAPTER-GO
 
-A GoLang bluetooth adapter implementation utilizing BlueZ and DBUS that allows BLE devices to interact with the ClearBlade Platform.
+A Go bluetooth adapter implementation utilizing BlueZ and DBUS that allows BLE devices to interact with the ClearBlade Platform.
 
 Much of the code has been based off of the implementation found at https://github.com/ecc1/ble
 
@@ -12,9 +12,9 @@ DBUS - https://www.freedesktop.org/wiki/Software/dbus/
 The BLE Adapter is only supported on Linux operating systems with the following specifications:
 
   * Linux - Minimum kernel version of 3.5 - http://www.bluez.org/release-of-bluez-5-0/  
-  * BlueZ - The minimum version of BlueZ with BLE support is 5.40. It is recommended to install at least BlueZ version 5.44 (5.46 is the most current version).
+  * BlueZ - The minimum version of BlueZ with BLE support is 5.40. It is recommended to install at least BlueZ version 5.44 (5.54 is the most current version).
 
-## Cross compile GoLang for Raspberry Pi
+## Cross compile Go for Raspberry Pi
 `GOOS=linux GOARCH=arm GOARM=6 go build`
 
 ## Status
@@ -50,7 +50,7 @@ Once a System has been created, artifacts must be defined within the ClearBlade 
   * Discovery filters provide a mechanism to target specific BLE devices
   * __CAVEAT:__ Discovery filtering will only work if the BLE device specifies a service UUID in its advertisement payload.
 
-###BLE\_Adapter\_Config Schema
+### BLE\_Adapter\_Config Schema
 Column Name | Column Data Type | Column Description
 ----------- | ---------------- | ------------------
 publish\_topic | string | The MQTT topic to use when publishing to the platform (the specified topic will be prepended with _deviceName_/, where deviceName is the value of the __deviceName__ argument specified on the start-up command)
@@ -59,7 +59,7 @@ discovery\_pause\_seconds | integer | Specifies the length of time to pause betw
 handle\_removed | boolean | Specifies whether or not the BLE adapter should handle DBUS _InterfaceRemoved_ signals
 handle\_changed | boolean | Specifies whether or not the BLE adapter should handle DBUS _PropertiesChanged_ signals
 
-###BLE\_Device\_Filters Schema
+### BLE\_Device\_Filters Schema
 Column Name | Column Data Type | Column Description
 ----------- | ---------------- | ------------------
 ble\_uuid | string | The _service advertisement_ uuid, optionally broadcasted by a BLE device, to allow for limiting the BLE devices that are discovered by the BLE adapter
