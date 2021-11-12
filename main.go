@@ -74,13 +74,13 @@ func initCbDeviceClient() {
 
 	deviceClient = cb.NewDeviceClientWithAddrs(platformURL, messagingURL, sysKey, sysSec, deviceName, password)
 
-	for err := deviceClient.Authenticate(); err != nil; {
+	for _, err := deviceClient.Authenticate(); err != nil; {
 		log.Printf("[WARN] Error authenticating platform broker: %s", err.Error())
 		log.Printf("[WARN] Will retry in 1 minute...")
 
 		// sleep 1 minute
 		time.Sleep(time.Duration(time.Minute * 1))
-		err = deviceClient.Authenticate()
+		_, err = deviceClient.Authenticate()
 	}
 }
 
