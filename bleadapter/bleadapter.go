@@ -9,7 +9,7 @@ import (
 	cb "github.com/clearblade/Go-SDK"
 	cbble "github.com/clearblade/ble-adapter-go/ble"
 	mqttTypes "github.com/clearblade/mqtt_parsing"
-	MQTT "github.com/eclipse/paho.mqtt.golang"
+	MQTT "github.com/clearblade/paho.mqtt.golang"
 	"github.com/godbus/dbus"
 )
 
